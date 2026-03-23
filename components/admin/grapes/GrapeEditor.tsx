@@ -10,6 +10,7 @@ import {
 import { useRouter } from "next/navigation";
 import { ChevronDown } from "lucide-react";
 import { ConfirmDialog } from "@/components/admin/ConfirmDialog";
+import { ProductionCountriesSelect } from "@/components/admin/grapes/ProductionCountriesSelect";
 
 const cardClass =
   "rounded-lg border border-slate-200 bg-slate-50/50 shadow-sm overflow-hidden";
@@ -184,6 +185,7 @@ const emptyForm = (): Grape => ({
   tasting_traits_en: null,
   emblematic_wines_fr: null,
   emblematic_wines_en: null,
+  production_countries: null,
   is_premium: false,
   status: "draft",
   published_at: null,
@@ -249,6 +251,7 @@ export function GrapeEditor({ grape, onClose, onDeleted }: Props) {
         tasting_traits_en: form.tasting_traits_en || null,
         emblematic_wines_fr: form.emblematic_wines_fr || null,
         emblematic_wines_en: form.emblematic_wines_en || null,
+        production_countries: form.production_countries ?? null,
         is_premium: !!form.is_premium,
         status: form.status || "draft",
         published_at: form.published_at || null,
@@ -414,6 +417,13 @@ export function GrapeEditor({ grape, onClose, onDeleted }: Props) {
                   value={form.origin_longitude ?? ""}
                   onChange={(e) => update({ origin_longitude: e.target.value === "" ? null : Number(e.target.value) })}
                   className={inputClass}
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <ProductionCountriesSelect
+                  value={form.production_countries ?? []}
+                  onChange={(next) => update({ production_countries: next.length === 0 ? null : next })}
+                  disabled={saving}
                 />
               </div>
             </div>

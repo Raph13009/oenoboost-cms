@@ -26,6 +26,8 @@ export type Grape = {
   tasting_traits_en: string | null;
   emblematic_wines_fr: string | null;
   emblematic_wines_en: string | null;
+  /** JSON array of English country names, e.g. ["France", "USA"] */
+  production_countries: string[] | null;
   is_premium: boolean;
   status: string;
   published_at: string | null;
@@ -41,7 +43,44 @@ export type GrapeListItem = Pick<
 
 const GRAPE_LIST_COLUMNS = "id,slug,name_fr,name_en,type,origin_country,status,updated_at";
 const GRAPE_DETAIL_COLUMNS =
-  "id,slug,name_fr,name_en,type,origin_country,origin_region_fr,origin_region_en,origin_latitude,origin_longitude,history_fr,history_en,crossings_fr,crossings_en,production_regions_fr,production_regions_en,viticultural_traits_fr,viticultural_traits_en,tasting_traits_fr,tasting_traits_en,emblematic_wines_fr,emblematic_wines_en,is_premium,status,published_at,created_at,updated_at,deleted_at";
+  "id,slug,name_fr,name_en,type,origin_country,origin_region_fr,origin_region_en,origin_latitude,origin_longitude,history_fr,history_en,crossings_fr,crossings_en,production_regions_fr,production_regions_en,viticultural_traits_fr,viticultural_traits_en,tasting_traits_fr,tasting_traits_en,emblematic_wines_fr,emblematic_wines_en,production_countries,is_premium,status,published_at,created_at,updated_at,deleted_at";
+
+function parseProductionCountries(raw: unknown): string[] | null {
+  if (raw == null) return null;
+  if (Array.isArray(raw)) {
+    const strings = raw
+      .filter((x): x is string => typeof x === "string")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    return normalizeProductionCountries(strings);
+  }
+  if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      return parseProductionCountries(parsed);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+/** Dedupe (case-insensitive), trim; sort A–Z for stable JSON in DB. */
+function normalizeProductionCountries(names: string[]): string[] | null {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const n of names) {
+    const t = n.trim();
+    if (!t) continue;
+    const key = t.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(t);
+  }
+  if (out.length === 0) return null;
+  out.sort((a, b) => a.localeCompare(b, "en", { sensitivity: "base" }));
+  return out;
+}
 
 export async function getGrapesLite(): Promise<Array<Pick<Grape, "id" | "name_fr">>> {
   const supabase = getSupabaseAdmin();
@@ -76,7 +115,11 @@ export async function getGrape(id: string): Promise<Grape | null> {
     .eq("id", id)
     .single();
   if (error || !data) return null;
-  return data as Grape;
+  const row = data as Record<string, unknown>;
+  return {
+    ...(row as unknown as Grape),
+    production_countries: parseProductionCountries(row.production_countries),
+  };
 }
 
 type GrapeForm = Omit<Grape, "id" | "created_at" | "updated_at" | "deleted_at"> & { id?: string };
@@ -104,6 +147,7 @@ function formToRow(form: GrapeForm): Record<string, unknown> {
     tasting_traits_en: form.tasting_traits_en || null,
     emblematic_wines_fr: form.emblematic_wines_fr || null,
     emblematic_wines_en: form.emblematic_wines_en || null,
+    production_countries: normalizeProductionCountries(form.production_countries ?? []),
     is_premium: !!form.is_premium,
     status: form.status || "draft",
     published_at: form.published_at || null,

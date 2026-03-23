@@ -218,6 +218,7 @@ Table de liaison M1 ↔ M2.
 | `history_fr` / `history_en` | TEXT | |
 | `crossings_fr` / `crossings_en` | TEXT | croisements génétiques |
 | `production_regions_fr` / `production_regions_en` | TEXT | |
+| `production_countries` | JSONB | optional — array of English country names, e.g. `["France","United States"]` |
 | `viticultural_traits_fr` / `viticultural_traits_en` | TEXT | |
 | `tasting_traits_fr` / `tasting_traits_en` | TEXT | |
 | `emblematic_wines_fr` / `emblematic_wines_en` | TEXT | |
