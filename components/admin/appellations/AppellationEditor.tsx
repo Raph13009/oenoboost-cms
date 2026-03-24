@@ -2,15 +2,19 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { Appellation } from "@/app/admin/(cms)/appellations/actions";
+import type {
+  Appellation,
+  AppellationLinkedSoilType,
+} from "@/app/admin/(cms)/appellations/actions";
 import {
+  addAppellationSoilLink,
   createAppellation,
   deleteAppellation,
-  getAppellationSoilLinks,
-  setAppellationSoilLinks,
+  getAppellationSoilLinkItems,
+  removeAppellationSoilLink,
+  searchSoilTypesForAppellationLinks,
   updateAppellation,
 } from "@/app/admin/(cms)/appellations/actions";
-import type { SoilType } from "@/app/admin/(cms)/soil-types/actions";
 import { useRouter } from "next/navigation";
 import { ChevronDown } from "lucide-react";
 import { ConfirmDialog } from "@/components/admin/ConfirmDialog";
@@ -163,6 +167,308 @@ function StatusDot({ status }: { status: string }) {
 function formatDate(s: string | null) {
   if (!s) return "—";
   return new Date(s).toLocaleString("fr-FR");
+}
+
+function SoilLinkSelector({
+  appellationId,
+  onError,
+}: {
+  appellationId: string | null;
+  onError: (message: string | null) => void;
+}) {
+  const [selectedSoilTypes, setSelectedSoilTypes] = useState<AppellationLinkedSoilType[]>([]);
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<AppellationLinkedSoilType[]>([]);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [dropdownRect, setDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const requestIdRef = useRef(0);
+
+  const sortSoilTypes = useCallback((items: AppellationLinkedSoilType[]) => {
+    return [...items].sort((a, b) => a.name_fr.localeCompare(b.name_fr, "fr", { sensitivity: "base" }));
+  }, []);
+
+  const syncDropdownPosition = useCallback(() => {
+    if (!rootRef.current) {
+      setDropdownRect(null);
+      return;
+    }
+    const rect = rootRef.current.getBoundingClientRect();
+    setDropdownRect({
+      top: rect.bottom + 6,
+      left: rect.left,
+      width: rect.width,
+    });
+  }, []);
+
+  useEffect(() => {
+    setSelectedSoilTypes([]);
+    setQuery("");
+    setResults([]);
+    setOpen(false);
+    setActiveIndex(0);
+
+    if (!appellationId) return;
+
+    let active = true;
+    getAppellationSoilLinkItems(appellationId)
+      .then((items) => {
+        if (!active) return;
+        setSelectedSoilTypes(sortSoilTypes(items));
+      })
+      .catch((err: unknown) => {
+        if (!active) return;
+        setSelectedSoilTypes([]);
+        onError(err instanceof Error ? err.message : "Impossible de charger les sols associés.");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [appellationId, onError, sortSoilTypes]);
+
+  useEffect(() => {
+    if (!open) return;
+    syncDropdownPosition();
+
+    function handlePointerDown(event: MouseEvent) {
+      const target = event.target as Node;
+      if (rootRef.current?.contains(target) || panelRef.current?.contains(target)) return;
+      setOpen(false);
+    }
+
+    function handleViewportChange() {
+      syncDropdownPosition();
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("resize", handleViewportChange);
+    window.addEventListener("scroll", handleViewportChange, true);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("resize", handleViewportChange);
+      window.removeEventListener("scroll", handleViewportChange, true);
+    };
+  }, [open, syncDropdownPosition]);
+
+  useEffect(() => {
+    if (!open || !appellationId) return;
+
+    const currentRequestId = ++requestIdRef.current;
+    setLoading(true);
+
+    const timeoutId = window.setTimeout(() => {
+      searchSoilTypesForAppellationLinks(query)
+        .then((items) => {
+          if (requestIdRef.current !== currentRequestId) return;
+          setResults(items);
+          setActiveIndex(0);
+        })
+        .catch((err: unknown) => {
+          if (requestIdRef.current !== currentRequestId) return;
+          setResults([]);
+          onError(err instanceof Error ? err.message : "Impossible de rechercher les sols.");
+        })
+        .finally(() => {
+          if (requestIdRef.current !== currentRequestId) return;
+          setLoading(false);
+          syncDropdownPosition();
+        });
+    }, 180);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [appellationId, onError, open, query, syncDropdownPosition]);
+
+  const visibleResults = useMemo(() => {
+    if (results.length === 0) return [];
+    const selectedIds = new Set(selectedSoilTypes.map((item) => item.id));
+    return results.filter((item) => !selectedIds.has(item.id));
+  }, [results, selectedSoilTypes]);
+
+  useEffect(() => {
+    if (activeIndex < visibleResults.length) return;
+    setActiveIndex(visibleResults.length > 0 ? visibleResults.length - 1 : 0);
+  }, [activeIndex, visibleResults.length]);
+
+  const handleAdd = useCallback(
+    async (soilType: AppellationLinkedSoilType) => {
+      if (!appellationId) return;
+      if (selectedSoilTypes.some((item) => item.id === soilType.id)) return;
+
+      onError(null);
+      setBusyId(soilType.id);
+      const previous = selectedSoilTypes;
+      setSelectedSoilTypes((current) => sortSoilTypes([...current, soilType]));
+      setQuery("");
+      inputRef.current?.focus();
+
+      const res = await addAppellationSoilLink(appellationId, soilType.id);
+      setBusyId((current) => (current === soilType.id ? null : current));
+
+      if (res.error) {
+        setSelectedSoilTypes(previous);
+        onError(res.error);
+      }
+    },
+    [appellationId, onError, selectedSoilTypes, sortSoilTypes]
+  );
+
+  const handleRemove = useCallback(
+    async (soilType: AppellationLinkedSoilType) => {
+      if (!appellationId) return;
+
+      onError(null);
+      setBusyId(soilType.id);
+      const previous = selectedSoilTypes;
+      setSelectedSoilTypes((current) => current.filter((item) => item.id !== soilType.id));
+
+      const res = await removeAppellationSoilLink(appellationId, soilType.id);
+      setBusyId((current) => (current === soilType.id ? null : current));
+
+      if (res.error) {
+        setSelectedSoilTypes(previous);
+        onError(res.error);
+      }
+    },
+    [appellationId, onError, selectedSoilTypes]
+  );
+
+  const handleKeyDown = useCallback(
+    async (event: React.KeyboardEvent<HTMLInputElement>) => {
+      if (!appellationId) return;
+
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        if (!open) {
+          setOpen(true);
+          return;
+        }
+        setActiveIndex((current) => (visibleResults.length === 0 ? 0 : Math.min(current + 1, visibleResults.length - 1)));
+        return;
+      }
+
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        if (!open) {
+          setOpen(true);
+          return;
+        }
+        setActiveIndex((current) => Math.max(current - 1, 0));
+        return;
+      }
+
+      if (event.key === "Enter" && open && visibleResults[activeIndex]) {
+        event.preventDefault();
+        await handleAdd(visibleResults[activeIndex]);
+        return;
+      }
+
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    },
+    [activeIndex, appellationId, handleAdd, open, visibleResults]
+  );
+
+  return (
+    <div className={fieldSpacing}>
+      <label className={labelClass}>Sols associés</label>
+
+      {appellationId ? (
+        <>
+          <div ref={rootRef} className="relative">
+            <input
+              ref={inputRef}
+              type="search"
+              value={query}
+              onFocus={() => setOpen(true)}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                if (!open) setOpen(true);
+              }}
+              onKeyDown={handleKeyDown}
+              placeholder="Rechercher un sol..."
+              className={inputClass}
+            />
+          </div>
+
+          {selectedSoilTypes.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5">
+              {selectedSoilTypes.map((soilType) => (
+                <button
+                  key={soilType.id}
+                  type="button"
+                  onClick={() => void handleRemove(soilType)}
+                  disabled={busyId === soilType.id}
+                  className="inline-flex max-w-full items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60"
+                  title="Retirer le sol"
+                >
+                  <span className="truncate">{soilType.name_fr}</span>
+                  <span className="text-slate-400">×</span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="text-xs text-slate-500">Aucun sol associé</div>
+          )}
+
+          {open &&
+            dropdownRect &&
+            typeof document !== "undefined" &&
+            createPortal(
+              <div
+                ref={panelRef}
+                className="z-[100] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl shadow-slate-200/60"
+                style={{
+                  position: "fixed",
+                  top: dropdownRect.top,
+                  left: dropdownRect.left,
+                  width: dropdownRect.width,
+                }}
+              >
+                {loading ? (
+                  <div className="px-3 py-2 text-sm text-slate-500">Recherche…</div>
+                ) : visibleResults.length > 0 ? (
+                  <ul className="max-h-72 overflow-auto py-1">
+                    {visibleResults.map((soilType, index) => (
+                      <li key={soilType.id}>
+                        <button
+                          type="button"
+                          onMouseEnter={() => setActiveIndex(index)}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => void handleAdd(soilType)}
+                          className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm transition-colors ${
+                            index === activeIndex ? "bg-slate-100" : "hover:bg-slate-50"
+                          }`}
+                        >
+                          <span className="min-w-0 truncate text-slate-900">{soilType.name_fr}</span>
+                          <span className="shrink-0 font-mono text-[11px] text-slate-400">{soilType.slug}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="px-3 py-2 text-sm text-slate-500">Aucun sol trouvé</div>
+                )}
+              </div>,
+              document.body
+            )}
+        </>
+      ) : (
+        <div className="rounded border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+          Enregistrez d&apos;abord cette AOP pour associer des sols.
+        </div>
+      )}
+    </div>
+  );
 }
 
 /** Searchable region dropdown: display name_fr, value id. Rendered in portal so it appears above cards. */
@@ -383,7 +689,6 @@ type Props = {
   appellation: Appellation | null;
   regions: Array<{ id: string; name_fr: string }>;
   subregions: Array<{ id: string; name_fr: string; region_id: string }>;
-  soilTypes: Array<Pick<SoilType, "id" | "name_fr" | "slug">>;
   onClose: () => void;
   onDeleted: () => void;
 };
@@ -420,7 +725,6 @@ export function AppellationEditor({
   appellation,
   regions,
   subregions,
-  soilTypes,
   onClose,
   onDeleted,
 }: Props) {
@@ -438,31 +742,10 @@ export function AppellationEditor({
   const [error, setError] = useState<string | null>(null);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [cardState, setCardState] = useState<CardState>(defaultCardState);
-  const [selectedSoilTypeIds, setSelectedSoilTypeIds] = useState<string[]>([]);
-  const [soilQuery, setSoilQuery] = useState("");
 
   useEffect(() => {
     setCardState(loadCardState());
   }, []);
-
-  useEffect(() => {
-    setSelectedSoilTypeIds([]);
-    setSoilQuery("");
-    if (!appellation?.id) return;
-    let active = true;
-    getAppellationSoilLinks(appellation.id)
-      .then((ids) => {
-        if (!active) return;
-        setSelectedSoilTypeIds(ids);
-      })
-      .catch(() => {
-        if (!active) return;
-        setSelectedSoilTypeIds([]);
-      });
-    return () => {
-      active = false;
-    };
-  }, [appellation?.id]);
 
   const toggleCard = useCallback((key: keyof CardState) => {
     setCardState((prev) => {
@@ -514,8 +797,10 @@ export function AppellationEditor({
     setSaving(true);
     try {
       const payload = {
-        ...form,
         subregion_id: form.subregion_id || null,
+        slug: form.slug,
+        name_fr: form.name_fr,
+        name_en: form.name_en,
         area_hectares: form.area_hectares ?? null,
         producer_count: form.producer_count ?? null,
         production_volume_hl: form.production_volume_hl ?? null,
@@ -529,18 +814,14 @@ export function AppellationEditor({
         colors_grapes_en: form.colors_grapes_en || null,
         soils_description_fr: form.soils_description_fr || null,
         soils_description_en: form.soils_description_en || null,
-        geojson: form.geojson ?? null,
         published_at: form.published_at || null,
         is_premium: !!form.is_premium,
+        status: form.status,
       };
       if (isNew) {
         const res = await createAppellation(payload);
         if (res.error) setError(res.error);
         else {
-          if (res.id) {
-            const linkRes = await setAppellationSoilLinks(res.id, selectedSoilTypeIds);
-            if (linkRes.error) setError(linkRes.error);
-          }
           router.refresh();
           onClose();
         }
@@ -548,8 +829,6 @@ export function AppellationEditor({
         const res = await updateAppellation(form.id, payload);
         if (res.error) setError(res.error);
         else {
-          const linkRes = await setAppellationSoilLinks(form.id, selectedSoilTypeIds);
-          if (linkRes.error) setError(linkRes.error);
           router.refresh();
           setSavedFeedback(true);
           setTimeout(() => setSavedFeedback(false), 1500);
@@ -578,29 +857,6 @@ export function AppellationEditor({
   };
 
   const panelTitle = form.name_fr?.trim() || form.name_en?.trim() || form.slug?.trim() || "Nouvelle AOP";
-
-  const filteredSoilTypes = useMemo(() => {
-    const q = soilQuery.trim().toLowerCase();
-    if (!q) return soilTypes;
-    return soilTypes.filter(
-      (s) =>
-        s.name_fr.toLowerCase().includes(q) ||
-        s.name_en?.toLowerCase().includes(q) ||
-        s.slug.toLowerCase().includes(q)
-    );
-  }, [soilTypes, soilQuery]);
-
-  const selectedSoilTypes = useMemo(() => {
-    if (selectedSoilTypeIds.length === 0) return [];
-    const set = new Set(selectedSoilTypeIds);
-    return soilTypes.filter((s) => set.has(s.id));
-  }, [soilTypes, selectedSoilTypeIds]);
-
-  const toggleSoilType = useCallback((id: string) => {
-    setSelectedSoilTypeIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-    );
-  }, []);
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-white">
@@ -757,64 +1013,7 @@ export function AppellationEditor({
           open={cardState.soilTypes}
           onToggle={() => toggleCard("soilTypes")}
         >
-          <div className={fieldSpacing}>
-            {selectedSoilTypes.length > 0 ? (
-              <div className="flex flex-wrap gap-1.5">
-                {selectedSoilTypes.map((s) => (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={() => toggleSoilType(s.id)}
-                    className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 hover:bg-slate-50"
-                    title="Retirer"
-                  >
-                    <span className="truncate max-w-[220px]">{s.name_fr}</span>
-                    <span className="text-slate-400">×</span>
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <div className="text-xs text-slate-500">Aucun sol sélectionné.</div>
-            )}
-
-            <input
-              type="search"
-              value={soilQuery}
-              onChange={(e) => setSoilQuery(e.target.value)}
-              placeholder="Rechercher des sols..."
-              className="h-8 w-full rounded border border-slate-200 bg-white px-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-200"
-            />
-
-            <div className="max-h-56 overflow-auto rounded border border-slate-200 bg-white">
-              {filteredSoilTypes.length > 0 ? (
-                <ul className="divide-y divide-slate-100">
-                  {filteredSoilTypes.map((s) => {
-                    const checked = selectedSoilTypeIds.includes(s.id);
-                    return (
-                      <li key={s.id}>
-                        <label className="flex cursor-pointer items-center gap-2 px-2 py-1.5 text-sm hover:bg-slate-50">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => toggleSoilType(s.id)}
-                            className="h-4 w-4 rounded border-slate-300"
-                          />
-                          <span className="min-w-0 truncate text-slate-800">
-                            {s.name_fr}
-                          </span>
-                          <span className="ml-auto font-mono text-[11px] text-slate-400">
-                            {s.slug}
-                          </span>
-                        </label>
-                      </li>
-                    );
-                  })}
-                </ul>
-              ) : (
-                <div className="p-3 text-sm text-slate-500">Aucun résultat</div>
-              )}
-            </div>
-          </div>
+          <SoilLinkSelector appellationId={isNew ? null : form.id} onError={setError} />
         </CollapsibleCard>
 
         <CollapsibleCard title="Éditorial" open={cardState.editorial} onToggle={() => toggleCard("editorial")}>
@@ -987,4 +1186,3 @@ export function AppellationEditor({
     </div>
   );
 }
-

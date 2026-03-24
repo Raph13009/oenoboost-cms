@@ -3,7 +3,6 @@ import { getWineRegionsLite } from "@/app/admin/(cms)/wine-regions/actions";
 import { getWineSubregionsLite } from "@/app/admin/(cms)/wine-subregions/actions";
 import { getAppellations } from "./actions";
 import { AppellationsView } from "@/components/admin/appellations/AppellationsView";
-import { getSoilTypesLite } from "@/app/admin/(cms)/soil-types/actions";
 
 export default async function AppellationsPage({
   searchParams,
@@ -25,7 +24,6 @@ export default async function AppellationsPage({
   let totalCount = 0;
   let regions: Awaited<ReturnType<typeof getWineRegionsLite>> = [];
   let subregions: Awaited<ReturnType<typeof getWineSubregionsLite>> = [];
-  let soilTypes: Awaited<ReturnType<typeof getSoilTypesLite>> = [];
   try {
     const res = await getAppellations({
       limit: pageSize,
@@ -42,15 +40,13 @@ export default async function AppellationsPage({
     totalCount = 0;
   }
 
-  const [regionsRes, subregionsRes, soilTypesRes] = await Promise.allSettled([
+  const [regionsRes, subregionsRes] = await Promise.allSettled([
     getWineRegionsLite(),
     getWineSubregionsLite(),
-    getSoilTypesLite(),
   ]);
 
   regions = regionsRes.status === "fulfilled" ? regionsRes.value : [];
   subregions = subregionsRes.status === "fulfilled" ? subregionsRes.value : [];
-  soilTypes = soilTypesRes.status === "fulfilled" ? soilTypesRes.value : [];
 
   return (
     <WorkspacePage
@@ -63,7 +59,6 @@ export default async function AppellationsPage({
           appellations={appellations}
           regions={regions}
           subregions={subregions}
-          soilTypes={soilTypes}
           currentPage={currentPage}
           totalPages={Math.max(1, Math.ceil(totalCount / pageSize))}
           hasPrev={hasPrev}

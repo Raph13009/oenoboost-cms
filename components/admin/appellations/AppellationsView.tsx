@@ -16,7 +16,6 @@ type Props = {
   appellations: AppellationListItem[];
   regions: Array<{ id: string; name_fr: string }>;
   subregions: Array<{ id: string; name_fr: string; region_id: string }>;
-  soilTypes: Array<{ id: string; name_fr: string; slug: string }>;
   currentPage: number;
   totalPages: number;
   hasPrev: boolean;
@@ -30,7 +29,6 @@ export function AppellationsView({
   appellations,
   regions,
   subregions,
-  soilTypes,
   currentPage,
   totalPages,
   hasPrev,
@@ -181,7 +179,6 @@ export function AppellationsView({
             appellation={null}
             regions={regions}
             subregions={subregions}
-            soilTypes={soilTypes}
             onClose={() => setSelectedId(null)}
             onDeleted={() => setSelectedId(null)}
           />
@@ -196,7 +193,6 @@ export function AppellationsView({
             appellation={selectedAppellationData}
             regions={regions}
             subregions={subregions}
-            soilTypes={soilTypes}
             onClose={() => setSelectedId(null)}
             onDeleted={() => setSelectedId(null)}
           />

@@ -1,10 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { SoilType } from "@/app/admin/(cms)/soil-types/actions";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import type {
+  SoilType,
+  SoilTypeLinkedAppellation,
+} from "@/app/admin/(cms)/soil-types/actions";
 import {
+  addSoilTypeAppellationLink,
   createSoilType,
   deleteSoilType,
+  getSoilTypeAppellationLinks,
+  removeSoilTypeAppellationLink,
+  searchAppellationsForSoilLinks,
   updateSoilType,
 } from "@/app/admin/(cms)/soil-types/actions";
 import { useRouter } from "next/navigation";
@@ -159,6 +167,313 @@ function StatusDot({ status }: { status: string }) {
 function formatDate(s: string | null) {
   if (!s) return "—";
   return new Date(s).toLocaleString("fr-FR");
+}
+
+function AppellationLinkSelector({
+  soilTypeId,
+  onError,
+}: {
+  soilTypeId: string | null;
+  onError: (message: string | null) => void;
+}) {
+  const [selectedAppellations, setSelectedAppellations] = useState<SoilTypeLinkedAppellation[]>([]);
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<SoilTypeLinkedAppellation[]>([]);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [dropdownRect, setDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const requestIdRef = useRef(0);
+
+  const sortAppellations = useCallback((items: SoilTypeLinkedAppellation[]) => {
+    return [...items].sort((a, b) => a.name_fr.localeCompare(b.name_fr, "fr", { sensitivity: "base" }));
+  }, []);
+
+  const syncDropdownPosition = useCallback(() => {
+    if (!rootRef.current) {
+      setDropdownRect(null);
+      return;
+    }
+    const rect = rootRef.current.getBoundingClientRect();
+    setDropdownRect({
+      top: rect.bottom + 6,
+      left: rect.left,
+      width: rect.width,
+    });
+  }, []);
+
+  useEffect(() => {
+    setSelectedAppellations([]);
+    setQuery("");
+    setResults([]);
+    setOpen(false);
+    setActiveIndex(0);
+
+    if (!soilTypeId) return;
+
+    let active = true;
+    getSoilTypeAppellationLinks(soilTypeId)
+      .then((items) => {
+        if (!active) return;
+        setSelectedAppellations(sortAppellations(items));
+      })
+      .catch((err: unknown) => {
+        if (!active) return;
+        setSelectedAppellations([]);
+        onError(err instanceof Error ? err.message : "Impossible de charger les AOP associées.");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [onError, soilTypeId, sortAppellations]);
+
+  useEffect(() => {
+    if (!open) return;
+    syncDropdownPosition();
+
+    function handlePointerDown(event: MouseEvent) {
+      const target = event.target as Node;
+      if (rootRef.current?.contains(target) || panelRef.current?.contains(target)) return;
+      setOpen(false);
+    }
+
+    function handleViewportChange() {
+      syncDropdownPosition();
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("resize", handleViewportChange);
+    window.addEventListener("scroll", handleViewportChange, true);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("resize", handleViewportChange);
+      window.removeEventListener("scroll", handleViewportChange, true);
+    };
+  }, [open, syncDropdownPosition]);
+
+  useEffect(() => {
+    if (!open || !soilTypeId) return;
+
+    const currentRequestId = ++requestIdRef.current;
+    setLoading(true);
+
+    const timeoutId = window.setTimeout(() => {
+      searchAppellationsForSoilLinks(query)
+        .then((items) => {
+          if (requestIdRef.current !== currentRequestId) return;
+          setResults(items);
+          setActiveIndex(0);
+        })
+        .catch((err: unknown) => {
+          if (requestIdRef.current !== currentRequestId) return;
+          setResults([]);
+          onError(err instanceof Error ? err.message : "Impossible de rechercher les AOP.");
+        })
+        .finally(() => {
+          if (requestIdRef.current !== currentRequestId) return;
+          setLoading(false);
+          syncDropdownPosition();
+        });
+    }, 180);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [open, onError, query, soilTypeId, syncDropdownPosition]);
+
+  const visibleResults = useMemo(() => {
+    if (results.length === 0) return [];
+    const selectedIds = new Set(selectedAppellations.map((item) => item.id));
+    return results.filter((item) => !selectedIds.has(item.id));
+  }, [results, selectedAppellations]);
+
+  useEffect(() => {
+    if (activeIndex < visibleResults.length) return;
+    setActiveIndex(visibleResults.length > 0 ? visibleResults.length - 1 : 0);
+  }, [activeIndex, visibleResults.length]);
+
+  const handleAdd = useCallback(
+    async (appellation: SoilTypeLinkedAppellation) => {
+      if (!soilTypeId) return;
+      if (selectedAppellations.some((item) => item.id === appellation.id)) return;
+
+      onError(null);
+      setBusyId(appellation.id);
+      const previous = selectedAppellations;
+      setSelectedAppellations((current) => sortAppellations([...current, appellation]));
+      setQuery("");
+      inputRef.current?.focus();
+
+      const res = await addSoilTypeAppellationLink(soilTypeId, appellation.id);
+      setBusyId((current) => (current === appellation.id ? null : current));
+
+      if (res.error) {
+        setSelectedAppellations(previous);
+        onError(res.error);
+      }
+    },
+    [onError, selectedAppellations, soilTypeId, sortAppellations]
+  );
+
+  const handleRemove = useCallback(
+    async (appellation: SoilTypeLinkedAppellation) => {
+      if (!soilTypeId) return;
+
+      onError(null);
+      setBusyId(appellation.id);
+      const previous = selectedAppellations;
+      setSelectedAppellations((current) => current.filter((item) => item.id !== appellation.id));
+
+      const res = await removeSoilTypeAppellationLink(soilTypeId, appellation.id);
+      setBusyId((current) => (current === appellation.id ? null : current));
+
+      if (res.error) {
+        setSelectedAppellations(previous);
+        onError(res.error);
+      }
+    },
+    [onError, selectedAppellations, soilTypeId]
+  );
+
+  const handleKeyDown = useCallback(
+    async (event: React.KeyboardEvent<HTMLInputElement>) => {
+      if (!soilTypeId) return;
+
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        if (!open) {
+          setOpen(true);
+          return;
+        }
+        setActiveIndex((current) => (visibleResults.length === 0 ? 0 : Math.min(current + 1, visibleResults.length - 1)));
+        return;
+      }
+
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        if (!open) {
+          setOpen(true);
+          return;
+        }
+        setActiveIndex((current) => Math.max(current - 1, 0));
+        return;
+      }
+
+      if (event.key === "Enter" && open && visibleResults[activeIndex]) {
+        event.preventDefault();
+        await handleAdd(visibleResults[activeIndex]);
+        return;
+      }
+
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    },
+    [activeIndex, handleAdd, open, soilTypeId, visibleResults]
+  );
+
+  return (
+    <div className="space-y-2.5">
+      <label className={labelClass}>AOP associées</label>
+
+      {soilTypeId ? (
+        <>
+          <div ref={rootRef} className="relative">
+            <input
+              ref={inputRef}
+              type="search"
+              value={query}
+              onFocus={() => setOpen(true)}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                if (!open) setOpen(true);
+              }}
+              onKeyDown={handleKeyDown}
+              placeholder="Rechercher une AOP..."
+              className={inputClass}
+            />
+          </div>
+
+          {selectedAppellations.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5">
+              {selectedAppellations.map((appellation) => (
+                <button
+                  key={appellation.id}
+                  type="button"
+                  onClick={() => void handleRemove(appellation)}
+                  disabled={busyId === appellation.id}
+                  className="inline-flex max-w-full items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60"
+                  title="Retirer l'AOP"
+                >
+                  <span className="truncate">
+                    {appellation.name_fr}
+                    {appellation.region_name_fr ? ` (${appellation.region_name_fr})` : ""}
+                  </span>
+                  <span className="text-slate-400">×</span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="text-xs text-slate-500">Aucune AOP associée</div>
+          )}
+
+          {open &&
+            dropdownRect &&
+            typeof document !== "undefined" &&
+            createPortal(
+              <div
+                ref={panelRef}
+                className="z-[100] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl shadow-slate-200/60"
+                style={{
+                  position: "fixed",
+                  top: dropdownRect.top,
+                  left: dropdownRect.left,
+                  width: dropdownRect.width,
+                }}
+              >
+                {loading ? (
+                  <div className="px-3 py-2 text-sm text-slate-500">Recherche…</div>
+                ) : visibleResults.length > 0 ? (
+                  <ul className="max-h-72 overflow-auto py-1">
+                    {visibleResults.map((appellation, index) => (
+                      <li key={appellation.id}>
+                        <button
+                          type="button"
+                          onMouseEnter={() => setActiveIndex(index)}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => void handleAdd(appellation)}
+                          className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm transition-colors ${
+                            index === activeIndex ? "bg-slate-100" : "hover:bg-slate-50"
+                          }`}
+                        >
+                          <span className="min-w-0 truncate text-slate-900">{appellation.name_fr}</span>
+                          {appellation.region_name_fr ? (
+                            <span className="shrink-0 text-xs text-slate-400">{appellation.region_name_fr}</span>
+                          ) : null}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="px-3 py-2 text-sm text-slate-500">Aucune AOP trouvée</div>
+                )}
+              </div>,
+              document.body
+            )}
+        </>
+      ) : (
+        <div className="rounded border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+          Enregistrez d&apos;abord ce sol pour associer des AOP.
+        </div>
+      )}
+    </div>
+  );
 }
 
 type Props = {
@@ -464,23 +779,8 @@ export function SoilTypeEditor({ soilType, onClose, onDeleted }: Props) {
                   className={textareaClass}
                 />
               </div>
-              <div>
-                <label className={labelClass}>AOP emblématiques (FR)</label>
-                <AutoResizeTextarea
-                  value={form.emblematic_aop_fr ?? ""}
-                  onChange={(e) => update({ emblematic_aop_fr: e.target.value || null })}
-                  minRows={2}
-                  className={textareaClass}
-                />
-              </div>
-              <div>
-                <label className={labelClass}>AOP emblématiques (EN)</label>
-                <AutoResizeTextarea
-                  value={form.emblematic_aop_en ?? ""}
-                  onChange={(e) => update({ emblematic_aop_en: e.target.value || null })}
-                  minRows={2}
-                  className={textareaClass}
-                />
+              <div className="sm:col-span-2">
+                <AppellationLinkSelector soilTypeId={isNew ? null : form.id} onError={setError} />
               </div>
             </div>
           </div>
@@ -588,4 +888,3 @@ export function SoilTypeEditor({ soilType, onClose, onDeleted }: Props) {
     </div>
   );
 }
-

@@ -42,6 +42,43 @@ export type AppellationListItem = Pick<
   "id" | "slug" | "name_fr" | "name_en" | "status" | "updated_at" | "subregion_id" | "subregion_name_fr" | "region_name_fr" | "region_id"
 >;
 
+export type AppellationLinkedSoilType = {
+  id: string;
+  name_fr: string;
+  slug: string;
+};
+
+type LinkedSoilRow = {
+  id: string;
+  name_fr: string;
+  slug: string;
+};
+
+type AppellationRegionRelation = { name_fr: string | null } | { name_fr: string | null }[] | null;
+type AppellationSubregionFetchRow = {
+  appellation_id: string;
+  subregion_id: string;
+  wine_subregions:
+    | {
+        id: string;
+        name_fr: string | null;
+        region_id: string | null;
+        wine_regions: AppellationRegionRelation;
+      }
+    | {
+        id: string;
+        name_fr: string | null;
+        region_id: string | null;
+        wine_regions: AppellationRegionRelation;
+      }[]
+    | null;
+};
+
+function getFirstRelation<T>(value: T | T[] | null | undefined): T | null {
+  if (Array.isArray(value)) return value[0] ?? null;
+  return value ?? null;
+}
+
 const APPELLATION_LIST_COLUMNS = "id,slug,name_fr,name_en,status,updated_at";
 const APPELLATION_DETAIL_COLUMNS =
   "id,slug,name_fr,name_en,area_hectares,producer_count,production_volume_hl,price_range_min_eur,price_range_max_eur,history_fr,history_en,colors_grapes_fr,colors_grapes_en,soils_description_fr,soils_description_en,geojson,centroid_lat,centroid_lng,is_premium,status,published_at,created_at,updated_at,deleted_at";
@@ -208,23 +245,10 @@ export async function getAppellations(options?: {
     { id: string; name_fr: string | null; region_id: string | null; region_name_fr: string | null }
   >();
 
-  for (const link of (linkData ?? []) as Array<{
-    appellation_id: string;
-    subregion_id: string;
-    wine_subregions:
-      | {
-          id: string;
-          name_fr: string | null;
-          region_id: string | null;
-          wine_regions: { name_fr: string | null } | { name_fr: string | null }[] | null;
-        }
-      | null;
-  }>) {
+  for (const link of (linkData ?? []) as AppellationSubregionFetchRow[]) {
     if (firstSubregionByAppellation.has(link.appellation_id)) continue;
-    const subregion = link.wine_subregions;
-    const region = Array.isArray(subregion?.wine_regions)
-      ? subregion?.wine_regions[0]
-      : subregion?.wine_regions;
+    const subregion = getFirstRelation(link.wine_subregions);
+    const region = getFirstRelation(subregion?.wine_regions);
     firstSubregionByAppellation.set(link.appellation_id, {
       id: subregion?.id ?? link.subregion_id,
       name_fr: subregion?.name_fr ?? null,
@@ -263,6 +287,7 @@ export async function getAppellation(id: string): Promise<Appellation | null> {
 
 type AppellationForm = Omit<
   Appellation,
+  | "geojson"
   | "id"
   | "created_at"
   | "updated_at"
@@ -272,18 +297,11 @@ type AppellationForm = Omit<
   | "region_id"
 > & {
   id?: string;
+  geojson?: unknown;
 };
 
 function formToRow(form: AppellationForm): Record<string, unknown> {
-  let geojson: unknown = form.geojson ?? null;
-  if (typeof geojson === "string" && geojson.trim()) {
-    try {
-      geojson = JSON.parse(geojson);
-    } catch {
-      geojson = null;
-    }
-  }
-  return {
+  const row: Record<string, unknown> = {
     slug: form.slug || null,
     name_fr: form.name_fr || "",
     name_en: form.name_en || null,
@@ -298,13 +316,26 @@ function formToRow(form: AppellationForm): Record<string, unknown> {
     colors_grapes_en: form.colors_grapes_en || null,
     soils_description_fr: form.soils_description_fr || null,
     soils_description_en: form.soils_description_en || null,
-    geojson,
     centroid_lat: form.centroid_lat ?? null,
     centroid_lng: form.centroid_lng ?? null,
     is_premium: !!form.is_premium,
     status: form.status || "draft",
     published_at: form.published_at || null,
   };
+
+  if (Object.prototype.hasOwnProperty.call(form, "geojson")) {
+    let geojson: unknown = form.geojson ?? null;
+    if (typeof geojson === "string" && geojson.trim()) {
+      try {
+        geojson = JSON.parse(geojson);
+      } catch {
+        geojson = null;
+      }
+    }
+    row.geojson = geojson;
+  }
+
+  return row;
 }
 
 async function syncAppellationSubregionLink(
@@ -377,6 +408,104 @@ export async function getAppellationSoilLinks(appellationId: string): Promise<st
     .eq("appellation_id", appellationId);
   if (error) throw new Error(error.message);
   return (data ?? []).map((r) => (r as { soil_type_id: string }).soil_type_id);
+}
+
+export async function getAppellationSoilLinkItems(
+  appellationId: string
+): Promise<AppellationLinkedSoilType[]> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("appellation_soil_links")
+    .select(
+      `
+      soil_type_id,
+      soil_types!soil_type_id(
+        id,
+        name_fr,
+        slug
+      )
+    `
+    )
+    .eq("appellation_id", appellationId);
+  if (error) throw new Error(error.message);
+
+  const results = (data ?? [])
+    .map((row) => {
+      const soilType = getFirstRelation(
+        (row as { soil_types: LinkedSoilRow | LinkedSoilRow[] | null }).soil_types
+      );
+      if (!soilType?.id || !soilType.name_fr || !soilType.slug) return null;
+      return {
+        id: soilType.id,
+        name_fr: soilType.name_fr,
+        slug: soilType.slug,
+      };
+    })
+    .filter((row): row is AppellationLinkedSoilType => row !== null);
+
+  return results.sort((a, b) => a.name_fr.localeCompare(b.name_fr, "fr", { sensitivity: "base" }));
+}
+
+export async function searchSoilTypesForAppellationLinks(
+  query: string
+): Promise<AppellationLinkedSoilType[]> {
+  const supabase = getSupabaseAdmin();
+  const trimmed = query.trim();
+
+  let request = supabase
+    .from("soil_types")
+    .select("id,name_fr,slug")
+    .is("deleted_at", null)
+    .order("name_fr", { ascending: true })
+    .limit(10);
+
+  if (trimmed) {
+    const escaped = trimmed.replaceAll(",", " ");
+    request = request.or(`name_fr.ilike.%${escaped}%,name_en.ilike.%${escaped}%,slug.ilike.%${escaped}%`);
+  }
+
+  const { data, error } = await request;
+  if (error) throw new Error(error.message);
+
+  return ((data ?? []) as LinkedSoilRow[]).map((row) => ({
+    id: row.id,
+    name_fr: row.name_fr,
+    slug: row.slug,
+  }));
+}
+
+export async function addAppellationSoilLink(
+  appellationId: string,
+  soilTypeId: string
+): Promise<{ error?: string }> {
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from("appellation_soil_links")
+    .upsert(
+      {
+        appellation_id: appellationId,
+        soil_type_id: soilTypeId,
+      },
+      { onConflict: "appellation_id,soil_type_id", ignoreDuplicates: true }
+    );
+  if (error) return { error: error.message };
+  revalidatePath("/admin/appellations");
+  return {};
+}
+
+export async function removeAppellationSoilLink(
+  appellationId: string,
+  soilTypeId: string
+): Promise<{ error?: string }> {
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from("appellation_soil_links")
+    .delete()
+    .eq("appellation_id", appellationId)
+    .eq("soil_type_id", soilTypeId);
+  if (error) return { error: error.message };
+  revalidatePath("/admin/appellations");
+  return {};
 }
 
 export async function setAppellationSoilLinks(
