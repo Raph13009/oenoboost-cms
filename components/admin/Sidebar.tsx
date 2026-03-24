@@ -9,6 +9,7 @@ import {
   Layers,
   Grape,
   Leaf,
+  FlaskConical,
   BookOpen,
   Newspaper,
   ClipboardList,
@@ -35,6 +36,7 @@ const nav = [
       { label: "AOP", href: "/admin/appellations", icon: MapPin },
       { label: "Cépages", href: "/admin/grapes", icon: Grape },
       { label: "Sols", href: "/admin/soil-types", icon: Leaf },
+      { label: "Vinification", href: "/admin/vinification-types", icon: FlaskConical },
     ],
   },
   {
