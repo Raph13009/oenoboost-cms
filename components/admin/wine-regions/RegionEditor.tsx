@@ -316,6 +316,47 @@ export function RegionEditor({ region, onClose, onDeleted }: Props) {
           onToggle={() => toggleCard("editorial")}
         >
           <div className={fieldSpacing}>
+              <div className="grid grid-cols-1 gap-x-3 gap-y-2.5 sm:grid-cols-3">
+                <div>
+                  <label className={labelClass}>Nombre de départements</label>
+                  <input
+                    type="number"
+                    value={form.department_count ?? ""}
+                    onChange={(e) =>
+                      update({
+                        department_count: e.target.value === "" ? null : Number(e.target.value),
+                      })
+                    }
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>Surface (ha)</label>
+                  <input
+                    type="number"
+                    value={form.area_hectares ?? ""}
+                    onChange={(e) =>
+                      update({
+                        area_hectares: e.target.value === "" ? null : Number(e.target.value),
+                      })
+                    }
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>Production totale (hl)</label>
+                  <input
+                    type="number"
+                    value={form.total_production_hl ?? ""}
+                    onChange={(e) =>
+                      update({
+                        total_production_hl: e.target.value === "" ? null : Number(e.target.value),
+                      })
+                    }
+                    className={inputClass}
+                  />
+                </div>
+              </div>
               <div>
                 <label className={labelClass}>Cépages principaux (FR)</label>
                 <AutoResizeTextarea
@@ -401,18 +442,6 @@ export function RegionEditor({ region, onClose, onDeleted }: Props) {
           onToggle={() => toggleCard("technical")}
         >
           <dl className="grid grid-cols-1 gap-x-3 gap-y-2 sm:grid-cols-2 text-xs">
-                <div>
-                  <dt className={labelClass}>Nombre de départements</dt>
-                  <dd className="text-slate-800">{form.department_count ?? "—"}</dd>
-                </div>
-                <div>
-                  <dt className={labelClass}>Surface (ha)</dt>
-                  <dd className="text-slate-800">{form.area_hectares ?? "—"}</dd>
-                </div>
-                <div>
-                  <dt className={labelClass}>Production totale (hl)</dt>
-                  <dd className="text-slate-800">{form.total_production_hl ?? "—"}</dd>
-                </div>
                 <div className="sm:col-span-2 grid grid-cols-2 gap-x-3">
                   <div>
                     <dt className={labelClass}>Latitude du centroïde</dt>
