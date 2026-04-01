@@ -10,6 +10,7 @@ type SubregionRule = {
 type RulesConfig = Record<string, SubregionRule>;
 
 type PolygonFeature = GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>;
+type BoundingBox = [number, number, number, number] | [number, number, number, number, number, number];
 
 const COMMUNES_PATH = path.resolve("./data/communes.geojson");
 const CONFIG_PATH = path.resolve("./data/config/loire_subregions_full.json");
@@ -25,7 +26,7 @@ function getDepartmentCode(inseeCode: string): string {
   return inseeCode.slice(0, 2);
 }
 
-function bboxOverlaps(a: turf.BBox, b: turf.BBox): boolean {
+function bboxOverlaps(a: BoundingBox, b: BoundingBox): boolean {
   return !(a[2] < b[0] || a[0] > b[2] || a[3] < b[1] || a[1] > b[3]);
 }
 

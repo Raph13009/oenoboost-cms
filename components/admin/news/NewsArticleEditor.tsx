@@ -106,7 +106,7 @@ function RichHtmlEditor({
     if (!editor) return;
     // Keep external value in sync when switching selected article.
     if (value !== editor.getHTML()) {
-      editor.commands.setContent(value || "", false);
+      editor.commands.setContent(value || "", { emitUpdate: false });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value, editor]);

@@ -21,7 +21,7 @@ const bodyClass =
 export default async function TestArticlePage({ params }: PageProps) {
   noStore();
 
-  const resolvedParams = typeof params.then === "function" ? await params : params;
+  const resolvedParams = await Promise.resolve(params);
   const id = resolvedParams.id;
 
   const supabase = getSupabaseAdmin();
@@ -74,4 +74,3 @@ export default async function TestArticlePage({ params }: PageProps) {
     </main>
   );
 }
-

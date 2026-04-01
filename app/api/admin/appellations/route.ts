@@ -16,7 +16,15 @@ export async function GET() {
     return NextResponse.json({ error: appellationError.message }, { status: 500 });
   }
 
-  const appellationIds = ((appellationData ?? []) as Array<{ id: string }>).map((row) => row.id);
+  const appellationRows = (appellationData ?? []) as unknown as Array<{
+    id: string;
+    slug: string;
+    name_fr: string;
+    name_en: string | null;
+    status: string;
+    updated_at: string;
+  }>;
+  const appellationIds = appellationRows.map((row) => row.id);
   const { data: linkData, error: linkError } = await supabase
     .from("appellation_subregion_links")
     .select(
@@ -40,7 +48,7 @@ export async function GET() {
     string,
     { id: string; name_fr: string | null; region_id: string | null; region_name_fr: string | null }
   >();
-  for (const link of (linkData ?? []) as Array<{
+  const appellationLinks = (linkData ?? []) as unknown as Array<{
     appellation_id: string;
     subregion_id: string;
     wine_subregions:
@@ -51,7 +59,8 @@ export async function GET() {
           wine_regions: { name_fr: string | null } | { name_fr: string | null }[] | null;
         }
       | null;
-  }>) {
+  }>;
+  for (const link of appellationLinks) {
     if (firstSubregionByAppellation.has(link.appellation_id)) continue;
     const subregion = link.wine_subregions;
     const region = Array.isArray(subregion?.wine_regions)
@@ -65,14 +74,7 @@ export async function GET() {
     });
   }
 
-  const appellations = ((appellationData ?? []) as Array<{
-    id: string;
-    slug: string;
-    name_fr: string;
-    name_en: string | null;
-    status: string;
-    updated_at: string;
-  }>).map((row) => {
+  const appellations = appellationRows.map((row) => {
     const sr = firstSubregionByAppellation.get(row.id);
 
     return {

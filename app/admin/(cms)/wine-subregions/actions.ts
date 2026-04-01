@@ -99,7 +99,8 @@ export async function getWineSubregionsLite(): Promise<
     .is("deleted_at", null)
     .order("name_fr", { ascending: true });
   if (error) throw new Error(error.message);
-  return ((data ?? []) as Array<{ id: string; region_id: string; name_fr: string }>).map((row) => ({
+  const rows = (data ?? []) as unknown as Array<{ id: string; region_id: string; name_fr: string }>;
+  return rows.map((row) => ({
     id: row.id,
     region_id: row.region_id,
     name_fr: row.name_fr,

@@ -57,8 +57,8 @@ async function getRegionPoints(): Promise<RegionPoint[]> {
           centroid_lat: number;
           centroid_lng: number;
           wine_regions:
-            | { name_fr: string }
-            | { name_fr: string }[]
+            | { name_fr: string; slug: string }
+            | { name_fr: string; slug: string }[]
             | null;
         } =>
           row.region_id != null &&

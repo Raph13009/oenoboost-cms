@@ -209,7 +209,9 @@ export async function deleteVinificationStep(id: string): Promise<{ error?: stri
     .order("step_order", { ascending: true });
   if (remainingError) return { error: remainingError.message };
 
-  for (const [index, row] of (remaining ?? []).entries()) {
+  const remainingSteps = remaining ?? [];
+  for (let index = 0; index < remainingSteps.length; index += 1) {
+    const row = remainingSteps[index];
     const { error: reorderError } = await supabase
       .from("vinification_steps")
       .update({ step_order: index + 1 })
@@ -227,7 +229,8 @@ export async function reorderVinificationSteps(
 ): Promise<{ error?: string }> {
   const supabase = getSupabaseAdmin();
 
-  for (const [index, stepId] of orderedStepIds.entries()) {
+  for (let index = 0; index < orderedStepIds.length; index += 1) {
+    const stepId = orderedStepIds[index];
     const { error } = await supabase
       .from("vinification_steps")
       .update({ step_order: index + 1 })

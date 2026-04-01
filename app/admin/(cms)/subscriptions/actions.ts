@@ -84,7 +84,7 @@ export async function getSubscriptions(options?: {
     return { subscriptions: [], total };
   }
 
-  const userIdsToFetch = [...new Set(rows.map((r) => r.user_id))];
+  const userIdsToFetch = Array.from(new Set(rows.map((r) => r.user_id)));
   const { data: usersData } = await supabase
     .from("users")
     .select("id, first_name, last_name, email")
