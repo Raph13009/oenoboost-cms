@@ -2,6 +2,19 @@
 
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { revalidatePath } from "next/cache";
+import { randomUUID } from "crypto";
+
+const NEWS_ARTICLE_IMAGES_BUCKET = "news-article-images";
+
+function sanitizeFileSegment(value: string | null | undefined) {
+  return (value ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+}
 
 export type NewsArticle = {
   id: string;
@@ -113,4 +126,50 @@ export async function deleteNewsArticle(id: string): Promise<{ error?: string }>
   if (error) return { error: error.message };
   revalidatePath("/admin/news");
   return {};
+}
+
+export async function uploadNewsArticleCover(
+  formData: FormData
+): Promise<{ url?: string; path?: string; error?: string }> {
+  const file = formData.get("file");
+  if (!(file instanceof File)) {
+    return { error: "Aucun fichier recadre fourni." };
+  }
+
+  if (!file.type.startsWith("image/")) {
+    return { error: "Le fichier doit etre une image." };
+  }
+
+  const maxBytes = 10 * 1024 * 1024;
+  if (file.size > maxBytes) {
+    return { error: "Image trop lourde. Maximum 10 Mo." };
+  }
+
+  const supabase = getSupabaseAdmin();
+  const arrayBuffer = await file.arrayBuffer();
+  const articleId = formData.get("articleId");
+  const slugInput = formData.get("slug");
+  const folder = typeof articleId === "string" && articleId ? articleId : "drafts";
+  const slug = sanitizeFileSegment(typeof slugInput === "string" ? slugInput : null) || "article";
+  const filePath = `${folder}/${slug}-${randomUUID()}.jpg`;
+
+  const { error: uploadError } = await supabase.storage
+    .from(NEWS_ARTICLE_IMAGES_BUCKET)
+    .upload(filePath, arrayBuffer, {
+      contentType: "image/jpeg",
+      cacheControl: "31536000",
+      upsert: false,
+    });
+
+  if (uploadError) {
+    return { error: uploadError.message };
+  }
+
+  const { data } = supabase.storage.from(NEWS_ARTICLE_IMAGES_BUCKET).getPublicUrl(filePath);
+
+  revalidatePath("/admin/news");
+  if (typeof articleId === "string" && articleId) {
+    revalidatePath(`/test/article/${articleId}`);
+  }
+  return { url: data.publicUrl, path: filePath };
 }

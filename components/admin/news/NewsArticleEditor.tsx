@@ -6,7 +6,9 @@ import {
   createNewsArticle,
   deleteNewsArticle,
   updateNewsArticle,
+  uploadNewsArticleCover,
 } from "@/app/admin/(cms)/news/actions";
+import { CmsPhotoCropField } from "@/components/admin/shared/CmsPhotoCropField";
 import { useRouter } from "next/navigation";
 import { ChevronDown } from "lucide-react";
 import { ConfirmDialog } from "@/components/admin/ConfirmDialog";
@@ -603,15 +605,18 @@ export function NewsArticleEditor({
           open={cardState.media}
           onToggle={() => toggleCard("media")}
         >
-          <div>
-            <label className={labelClass}>URL de couverture</label>
-            <input
-              value={form.cover_url ?? ""}
-              onChange={(e) => update({ cover_url: e.target.value || null })}
-              className={inputClass}
-              placeholder="https://…"
-            />
-          </div>
+          <CmsPhotoCropField
+            value={form.cover_url}
+            onChange={(url) => update({ cover_url: url })}
+            entityId={isNew ? null : form.id}
+            entityIdFormKey="articleId"
+            slug={form.slug || form.title_fr}
+            slugFallback="article"
+            disabled={saving}
+            onError={setError}
+            upload={uploadNewsArticleCover}
+            label="Image de couverture"
+          />
         </CollapsibleCard>
 
         <CollapsibleCard
