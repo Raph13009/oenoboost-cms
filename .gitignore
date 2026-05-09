@@ -4,6 +4,7 @@ node_modules
 .DS_Store
 .cursor/mcp.json
 .next
+tsconfig.tsbuildinfo
 
 # Local heavy data artifacts
 appellations_raw.json
