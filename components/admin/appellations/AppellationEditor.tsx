@@ -4,15 +4,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type {
   Appellation,
+  AppellationCommune,
   AppellationLinkedSoilType,
 } from "@/app/admin/(cms)/appellations/actions";
 import {
   addAppellationSoilLink,
   createAppellation,
   deleteAppellation,
+  getAppellationCommunes,
   getAppellationSoilLinkItems,
   removeAppellationSoilLink,
+  searchCommunesFull,
   searchSoilTypesForAppellationLinks,
+  setAppellationCommuneLinks,
   updateAppellation,
 } from "@/app/admin/(cms)/appellations/actions";
 import { useRouter } from "next/navigation";
@@ -34,6 +38,7 @@ type CardState = {
   identity: boolean;
   production: boolean;
   soilTypes: boolean;
+  communes: boolean;
   editorial: boolean;
   flags: boolean;
   technical: boolean;
@@ -44,6 +49,7 @@ const defaultCardState: CardState = {
   identity: true,
   production: true,
   soilTypes: true,
+  communes: true,
   editorial: true,
   flags: true,
   technical: false,
@@ -60,6 +66,7 @@ function loadCardState(): CardState {
       identity: parsed.identity ?? defaultCardState.identity,
       production: parsed.production ?? defaultCardState.production,
       soilTypes: parsed.soilTypes ?? defaultCardState.soilTypes,
+      communes: parsed.communes ?? defaultCardState.communes,
       editorial: parsed.editorial ?? defaultCardState.editorial,
       flags: parsed.flags ?? defaultCardState.flags,
       // Always closed when entering the page (even if previously expanded).
@@ -471,6 +478,279 @@ function SoilLinkSelector({
   );
 }
 
+/**
+ * Controlled commune picker for an AOP. The dropdown lists communes belonging
+ * to the AOP's wine region (via `communes_full_subregion_link`) and matches
+ * the query as a normalized substring (lowercased, accents stripped, dashes /
+ * spaces ignored — "tetien" matches "Saint-Étienne"). The selection is held
+ * in parent state and persisted on save via `setAppellationCommuneLinks`, so
+ * communes can be picked before the AOP is first saved.
+ */
+function CommuneLinkSelector({
+  value,
+  onChange,
+  regionId,
+  onError,
+}: {
+  value: AppellationCommune[];
+  onChange: (next: AppellationCommune[]) => void;
+  regionId: string;
+  onError: (message: string | null) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<AppellationCommune[]>([]);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [dropdownRect, setDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const requestIdRef = useRef(0);
+
+  const sortCommunes = useCallback((items: AppellationCommune[]) => {
+    return [...items].sort((a, b) => a.name.localeCompare(b.name, "fr", { sensitivity: "base" }));
+  }, []);
+
+  const syncDropdownPosition = useCallback(() => {
+    if (!rootRef.current) {
+      setDropdownRect(null);
+      return;
+    }
+    const rect = rootRef.current.getBoundingClientRect();
+    setDropdownRect({
+      top: rect.bottom + 6,
+      left: rect.left,
+      width: rect.width,
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    syncDropdownPosition();
+
+    function handlePointerDown(event: MouseEvent) {
+      const target = event.target as Node;
+      if (rootRef.current?.contains(target) || panelRef.current?.contains(target)) return;
+      setOpen(false);
+    }
+
+    function handleViewportChange() {
+      syncDropdownPosition();
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("resize", handleViewportChange);
+    window.addEventListener("scroll", handleViewportChange, true);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("resize", handleViewportChange);
+      window.removeEventListener("scroll", handleViewportChange, true);
+    };
+  }, [open, syncDropdownPosition]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (!regionId) {
+      setResults([]);
+      setLoading(false);
+      return;
+    }
+
+    const currentRequestId = ++requestIdRef.current;
+    setLoading(true);
+
+    const timeoutId = window.setTimeout(() => {
+      searchCommunesFull(query, regionId, 50)
+        .then((items) => {
+          if (requestIdRef.current !== currentRequestId) return;
+          setResults(items);
+          setActiveIndex(0);
+        })
+        .catch((err: unknown) => {
+          if (requestIdRef.current !== currentRequestId) return;
+          setResults([]);
+          onError(err instanceof Error ? err.message : "Impossible de rechercher des communes.");
+        })
+        .finally(() => {
+          if (requestIdRef.current !== currentRequestId) return;
+          setLoading(false);
+          syncDropdownPosition();
+        });
+    }, 180);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [onError, open, query, regionId, syncDropdownPosition]);
+
+  const visibleResults = useMemo(() => {
+    if (results.length === 0) return [];
+    const selectedCodes = new Set(value.map((item) => item.code_insee));
+    return results.filter((item) => !selectedCodes.has(item.code_insee));
+  }, [results, value]);
+
+  useEffect(() => {
+    if (activeIndex < visibleResults.length) return;
+    setActiveIndex(visibleResults.length > 0 ? visibleResults.length - 1 : 0);
+  }, [activeIndex, visibleResults.length]);
+
+  const handleAdd = useCallback(
+    (commune: AppellationCommune) => {
+      if (value.some((item) => item.code_insee === commune.code_insee)) return;
+      onChange(sortCommunes([...value, commune]));
+      setQuery("");
+      inputRef.current?.focus();
+    },
+    [onChange, sortCommunes, value]
+  );
+
+  const handleRemove = useCallback(
+    (commune: AppellationCommune) => {
+      onChange(value.filter((item) => item.code_insee !== commune.code_insee));
+    },
+    [onChange, value]
+  );
+
+  const handleKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLInputElement>) => {
+      if (!regionId) return;
+
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        if (!open) {
+          setOpen(true);
+          return;
+        }
+        setActiveIndex((current) => (visibleResults.length === 0 ? 0 : Math.min(current + 1, visibleResults.length - 1)));
+        return;
+      }
+
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        if (!open) {
+          setOpen(true);
+          return;
+        }
+        setActiveIndex((current) => Math.max(current - 1, 0));
+        return;
+      }
+
+      if (event.key === "Enter" && open && visibleResults[activeIndex]) {
+        event.preventDefault();
+        handleAdd(visibleResults[activeIndex]);
+        return;
+      }
+
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    },
+    [activeIndex, handleAdd, open, regionId, visibleResults]
+  );
+
+  return (
+    <div className={fieldSpacing}>
+      <div className="flex items-baseline justify-between">
+        <label className={labelClass}>Communes associées</label>
+        <span className="text-[11px] text-slate-500">{value.length}</span>
+      </div>
+
+      {regionId ? (
+        <>
+          <div ref={rootRef} className="relative">
+            <input
+              ref={inputRef}
+              type="search"
+              value={query}
+              onFocus={() => setOpen(true)}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                if (!open) setOpen(true);
+              }}
+              onKeyDown={handleKeyDown}
+              placeholder="Rechercher une commune (ex: tetien pour Saint-Étienne)…"
+              className={inputClass}
+            />
+          </div>
+
+          {value.length > 0 ? (
+            <div className="max-h-56 overflow-auto rounded border border-slate-200 bg-white">
+              <ul className="divide-y divide-slate-100">
+                {value.map((commune) => (
+                  <li key={commune.code_insee} className="flex items-center justify-between gap-2 px-2.5 py-1.5">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm text-slate-800">{commune.name}</div>
+                      <div className="font-mono text-[11px] text-slate-400">{commune.code_insee}</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleRemove(commune)}
+                      className="shrink-0 rounded-full px-2 py-0.5 text-xs text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
+                      title="Retirer la commune"
+                    >
+                      Retirer
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <div className="text-xs text-slate-500">Aucune commune associée</div>
+          )}
+
+          {open &&
+            dropdownRect &&
+            typeof document !== "undefined" &&
+            createPortal(
+              <div
+                ref={panelRef}
+                className="z-[100] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl shadow-slate-200/60"
+                style={{
+                  position: "fixed",
+                  top: dropdownRect.top,
+                  left: dropdownRect.left,
+                  width: dropdownRect.width,
+                }}
+              >
+                {loading ? (
+                  <div className="px-3 py-2 text-sm text-slate-500">Recherche…</div>
+                ) : visibleResults.length > 0 ? (
+                  <ul className="max-h-72 overflow-auto py-1">
+                    {visibleResults.map((commune, index) => (
+                      <li key={commune.code_insee}>
+                        <button
+                          type="button"
+                          onMouseEnter={() => setActiveIndex(index)}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => handleAdd(commune)}
+                          className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm transition-colors ${
+                            index === activeIndex ? "bg-slate-100" : "hover:bg-slate-50"
+                          }`}
+                        >
+                          <span className="min-w-0 truncate text-slate-900">{commune.name}</span>
+                          <span className="shrink-0 font-mono text-[11px] text-slate-400">{commune.code_insee}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="px-3 py-2 text-sm text-slate-500">Aucune commune trouvée</div>
+                )}
+              </div>,
+              document.body
+            )}
+        </>
+      ) : (
+        <div className="rounded border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+          Sélectionnez d&apos;abord une région pour rechercher des communes.
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Searchable region dropdown: display name_fr, value id. Rendered in portal so it appears above cards. */
 function RegionSelector({
   regions,
@@ -739,6 +1019,27 @@ export function AppellationEditor({
   const [error, setError] = useState<string | null>(null);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [cardState, setCardState] = useState<CardState>(defaultCardState);
+  const [communes, setCommunes] = useState<AppellationCommune[]>([]);
+
+  // Load existing commune links when opening an AOP. Resets on AOP switch.
+  useEffect(() => {
+    setCommunes([]);
+    const id = appellation?.id;
+    if (!id) return;
+    let active = true;
+    getAppellationCommunes(id)
+      .then((items) => {
+        if (!active) return;
+        setCommunes(items);
+      })
+      .catch((err: unknown) => {
+        if (!active) return;
+        setError(err instanceof Error ? err.message : "Impossible de charger les communes associées.");
+      });
+    return () => {
+      active = false;
+    };
+  }, [appellation?.id, appellation?.updated_at]);
 
   useEffect(() => {
     setCardState(loadCardState());
@@ -813,17 +1114,32 @@ export function AppellationEditor({
         is_premium: !!form.is_premium,
         status: form.status,
       };
+      const codes = communes.map((c) => c.code_insee);
       if (isNew) {
         const res = await createAppellation(payload);
-        if (res.error) setError(res.error);
-        else {
+        if (res.error) {
+          setError(res.error);
+        } else {
+          if (res.id) {
+            const linkRes = await setAppellationCommuneLinks(res.id, codes);
+            if (linkRes.error) {
+              setError(linkRes.error);
+              return;
+            }
+          }
           router.refresh();
           onClose();
         }
       } else {
         const res = await updateAppellation(form.id, payload);
-        if (res.error) setError(res.error);
-        else {
+        if (res.error) {
+          setError(res.error);
+        } else {
+          const linkRes = await setAppellationCommuneLinks(form.id, codes);
+          if (linkRes.error) {
+            setError(linkRes.error);
+            return;
+          }
           router.refresh();
           setSavedFeedback(true);
           setTimeout(() => setSavedFeedback(false), 1500);
@@ -1011,6 +1327,19 @@ export function AppellationEditor({
           onToggle={() => toggleCard("soilTypes")}
         >
           <SoilLinkSelector appellationId={isNew ? null : form.id} onError={setError} />
+        </CollapsibleCard>
+
+        <CollapsibleCard
+          title="Communes"
+          open={cardState.communes}
+          onToggle={() => toggleCard("communes")}
+        >
+          <CommuneLinkSelector
+            value={communes}
+            onChange={setCommunes}
+            regionId={regionId}
+            onError={setError}
+          />
         </CollapsibleCard>
 
         <CollapsibleCard title="Éditorial" open={cardState.editorial} onToggle={() => toggleCard("editorial")}>
