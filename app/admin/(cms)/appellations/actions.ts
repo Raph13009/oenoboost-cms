@@ -777,17 +777,21 @@ export async function getAppellationCommunes(
 }
 
 /**
- * IntelliJ-style fuzzy search over `communes_full` (case + accent insensitive,
- * subsequence match). Backed by the `search_communes_full` Postgres function
- * (see `docs/sql/create_search_communes_full_rpc.sql`).
+ * Substring search over `communes_full` scoped to a wine region. Both query
+ * and name are normalized (lowercase, accents stripped, non-alphanumerics
+ * removed) before a `like '%q%'` match, so "tetien" matches "Saint-Étienne".
+ * Backed by the `search_communes_full` Postgres RPC (see
+ * `docs/sql/create_search_communes_full_rpc.sql`).
  */
 export async function searchCommunesFull(
   query: string,
+  regionId: string | null,
   limit = 50
 ): Promise<AppellationCommune[]> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase.rpc("search_communes_full", {
     p_query: query ?? "",
+    p_region_id: regionId && regionId.trim() !== "" ? regionId : null,
     p_limit: Math.min(Math.max(limit, 1), 200),
   });
   if (error) throw new Error(error.message);
@@ -829,6 +833,55 @@ export async function removeAppellationCommuneLink(
     .eq("aop_id", aopId)
     .eq("commune_code_insee", codeInsee);
   if (error) return { error: error.message };
+  revalidatePath("/admin/appellations");
+  return {};
+}
+
+/**
+ * Replaces the entire set of commune links for an AOP. Used by the editor to
+ * persist the commune list in one shot when the AOP is saved (including on
+ * creation, when individual add/remove calls aren't possible yet).
+ */
+export async function setAppellationCommuneLinks(
+  appellationId: string,
+  codesInsee: string[]
+): Promise<{ error?: string }> {
+  const aopId = toNumberId(appellationId);
+  if (aopId === null) return { error: "Identifiant AOP invalide." };
+  const desired = Array.from(
+    new Set((codesInsee ?? []).filter((code): code is string => typeof code === "string" && code.length > 0))
+  );
+  const supabase = getSupabaseAdmin();
+
+  const { data: existingRows, error: existingError } = await supabase
+    .from("communes_full_aop_link")
+    .select("commune_code_insee")
+    .eq("aop_id", aopId);
+  if (existingError) return { error: existingError.message };
+
+  const existing = new Set(
+    (existingRows ?? []).map((row) => (row as { commune_code_insee: string }).commune_code_insee)
+  );
+  const toInsert = desired.filter((code) => !existing.has(code));
+  const toDelete = Array.from(existing).filter((code) => !desired.includes(code));
+
+  if (toDelete.length > 0) {
+    const { error: deleteError } = await supabase
+      .from("communes_full_aop_link")
+      .delete()
+      .eq("aop_id", aopId)
+      .in("commune_code_insee", toDelete);
+    if (deleteError) return { error: deleteError.message };
+  }
+
+  if (toInsert.length > 0) {
+    const rows = toInsert.map((commune_code_insee) => ({ aop_id: aopId, commune_code_insee }));
+    const { error: insertError } = await supabase
+      .from("communes_full_aop_link")
+      .upsert(rows, { onConflict: "aop_id,commune_code_insee", ignoreDuplicates: true });
+    if (insertError) return { error: insertError.message };
+  }
+
   revalidatePath("/admin/appellations");
   return {};
 }

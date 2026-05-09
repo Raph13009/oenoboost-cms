@@ -8,16 +8,15 @@ import type {
   AppellationLinkedSoilType,
 } from "@/app/admin/(cms)/appellations/actions";
 import {
-  addAppellationCommuneLink,
   addAppellationSoilLink,
   createAppellation,
   deleteAppellation,
   getAppellationCommunes,
   getAppellationSoilLinkItems,
-  removeAppellationCommuneLink,
   removeAppellationSoilLink,
   searchCommunesFull,
   searchSoilTypesForAppellationLinks,
+  setAppellationCommuneLinks,
   updateAppellation,
 } from "@/app/admin/(cms)/appellations/actions";
 import { useRouter } from "next/navigation";
@@ -480,24 +479,28 @@ function SoilLinkSelector({
 }
 
 /**
- * IntelliJ-style commune picker for an AOP. The dropdown lists `communes_full`
- * via the `search_communes_full` RPC: case- and accent-insensitive, with
- * subsequence matching ("SaEti" → "Saint-Étienne"). Selected communes are
- * persisted in `communes_full_aop_link`.
+ * Controlled commune picker for an AOP. The dropdown lists communes belonging
+ * to the AOP's wine region (via `communes_full_subregion_link`) and matches
+ * the query as a normalized substring (lowercased, accents stripped, dashes /
+ * spaces ignored — "tetien" matches "Saint-Étienne"). The selection is held
+ * in parent state and persisted on save via `setAppellationCommuneLinks`, so
+ * communes can be picked before the AOP is first saved.
  */
 function CommuneLinkSelector({
-  appellationId,
+  value,
+  onChange,
+  regionId,
   onError,
 }: {
-  appellationId: string | null;
+  value: AppellationCommune[];
+  onChange: (next: AppellationCommune[]) => void;
+  regionId: string;
   onError: (message: string | null) => void;
 }) {
-  const [selectedCommunes, setSelectedCommunes] = useState<AppellationCommune[]>([]);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<AppellationCommune[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [busyCode, setBusyCode] = useState<string | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [dropdownRect, setDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -521,32 +524,6 @@ function CommuneLinkSelector({
       width: rect.width,
     });
   }, []);
-
-  useEffect(() => {
-    setSelectedCommunes([]);
-    setQuery("");
-    setResults([]);
-    setOpen(false);
-    setActiveIndex(0);
-
-    if (!appellationId) return;
-
-    let active = true;
-    getAppellationCommunes(appellationId)
-      .then((items) => {
-        if (!active) return;
-        setSelectedCommunes(sortCommunes(items));
-      })
-      .catch((err: unknown) => {
-        if (!active) return;
-        setSelectedCommunes([]);
-        onError(err instanceof Error ? err.message : "Impossible de charger les communes associées.");
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [appellationId, onError, sortCommunes]);
 
   useEffect(() => {
     if (!open) return;
@@ -574,13 +551,18 @@ function CommuneLinkSelector({
   }, [open, syncDropdownPosition]);
 
   useEffect(() => {
-    if (!open || !appellationId) return;
+    if (!open) return;
+    if (!regionId) {
+      setResults([]);
+      setLoading(false);
+      return;
+    }
 
     const currentRequestId = ++requestIdRef.current;
     setLoading(true);
 
     const timeoutId = window.setTimeout(() => {
-      searchCommunesFull(query, 50)
+      searchCommunesFull(query, regionId, 50)
         .then((items) => {
           if (requestIdRef.current !== currentRequestId) return;
           setResults(items);
@@ -601,13 +583,13 @@ function CommuneLinkSelector({
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [appellationId, onError, open, query, syncDropdownPosition]);
+  }, [onError, open, query, regionId, syncDropdownPosition]);
 
   const visibleResults = useMemo(() => {
     if (results.length === 0) return [];
-    const selectedCodes = new Set(selectedCommunes.map((item) => item.code_insee));
+    const selectedCodes = new Set(value.map((item) => item.code_insee));
     return results.filter((item) => !selectedCodes.has(item.code_insee));
-  }, [results, selectedCommunes]);
+  }, [results, value]);
 
   useEffect(() => {
     if (activeIndex < visibleResults.length) return;
@@ -615,51 +597,25 @@ function CommuneLinkSelector({
   }, [activeIndex, visibleResults.length]);
 
   const handleAdd = useCallback(
-    async (commune: AppellationCommune) => {
-      if (!appellationId) return;
-      if (selectedCommunes.some((item) => item.code_insee === commune.code_insee)) return;
-
-      onError(null);
-      setBusyCode(commune.code_insee);
-      const previous = selectedCommunes;
-      setSelectedCommunes((current) => sortCommunes([...current, commune]));
+    (commune: AppellationCommune) => {
+      if (value.some((item) => item.code_insee === commune.code_insee)) return;
+      onChange(sortCommunes([...value, commune]));
       setQuery("");
       inputRef.current?.focus();
-
-      const res = await addAppellationCommuneLink(appellationId, commune.code_insee);
-      setBusyCode((current) => (current === commune.code_insee ? null : current));
-
-      if (res.error) {
-        setSelectedCommunes(previous);
-        onError(res.error);
-      }
     },
-    [appellationId, onError, selectedCommunes, sortCommunes]
+    [onChange, sortCommunes, value]
   );
 
   const handleRemove = useCallback(
-    async (commune: AppellationCommune) => {
-      if (!appellationId) return;
-
-      onError(null);
-      setBusyCode(commune.code_insee);
-      const previous = selectedCommunes;
-      setSelectedCommunes((current) => current.filter((item) => item.code_insee !== commune.code_insee));
-
-      const res = await removeAppellationCommuneLink(appellationId, commune.code_insee);
-      setBusyCode((current) => (current === commune.code_insee ? null : current));
-
-      if (res.error) {
-        setSelectedCommunes(previous);
-        onError(res.error);
-      }
+    (commune: AppellationCommune) => {
+      onChange(value.filter((item) => item.code_insee !== commune.code_insee));
     },
-    [appellationId, onError, selectedCommunes]
+    [onChange, value]
   );
 
   const handleKeyDown = useCallback(
-    async (event: React.KeyboardEvent<HTMLInputElement>) => {
-      if (!appellationId) return;
+    (event: React.KeyboardEvent<HTMLInputElement>) => {
+      if (!regionId) return;
 
       if (event.key === "ArrowDown") {
         event.preventDefault();
@@ -683,7 +639,7 @@ function CommuneLinkSelector({
 
       if (event.key === "Enter" && open && visibleResults[activeIndex]) {
         event.preventDefault();
-        await handleAdd(visibleResults[activeIndex]);
+        handleAdd(visibleResults[activeIndex]);
         return;
       }
 
@@ -691,17 +647,17 @@ function CommuneLinkSelector({
         setOpen(false);
       }
     },
-    [activeIndex, appellationId, handleAdd, open, visibleResults]
+    [activeIndex, handleAdd, open, regionId, visibleResults]
   );
 
   return (
     <div className={fieldSpacing}>
       <div className="flex items-baseline justify-between">
         <label className={labelClass}>Communes associées</label>
-        <span className="text-[11px] text-slate-500">{selectedCommunes.length}</span>
+        <span className="text-[11px] text-slate-500">{value.length}</span>
       </div>
 
-      {appellationId ? (
+      {regionId ? (
         <>
           <div ref={rootRef} className="relative">
             <input
@@ -714,15 +670,15 @@ function CommuneLinkSelector({
                 if (!open) setOpen(true);
               }}
               onKeyDown={handleKeyDown}
-              placeholder="Rechercher une commune (ex: SaEti pour Saint-Étienne)…"
+              placeholder="Rechercher une commune (ex: tetien pour Saint-Étienne)…"
               className={inputClass}
             />
           </div>
 
-          {selectedCommunes.length > 0 ? (
+          {value.length > 0 ? (
             <div className="max-h-56 overflow-auto rounded border border-slate-200 bg-white">
               <ul className="divide-y divide-slate-100">
-                {selectedCommunes.map((commune) => (
+                {value.map((commune) => (
                   <li key={commune.code_insee} className="flex items-center justify-between gap-2 px-2.5 py-1.5">
                     <div className="min-w-0">
                       <div className="truncate text-sm text-slate-800">{commune.name}</div>
@@ -730,9 +686,8 @@ function CommuneLinkSelector({
                     </div>
                     <button
                       type="button"
-                      onClick={() => void handleRemove(commune)}
-                      disabled={busyCode === commune.code_insee}
-                      className="shrink-0 rounded-full px-2 py-0.5 text-xs text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 disabled:cursor-wait disabled:opacity-60"
+                      onClick={() => handleRemove(commune)}
+                      className="shrink-0 rounded-full px-2 py-0.5 text-xs text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
                       title="Retirer la commune"
                     >
                       Retirer
@@ -769,7 +724,7 @@ function CommuneLinkSelector({
                           type="button"
                           onMouseEnter={() => setActiveIndex(index)}
                           onMouseDown={(event) => event.preventDefault()}
-                          onClick={() => void handleAdd(commune)}
+                          onClick={() => handleAdd(commune)}
                           className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm transition-colors ${
                             index === activeIndex ? "bg-slate-100" : "hover:bg-slate-50"
                           }`}
@@ -789,7 +744,7 @@ function CommuneLinkSelector({
         </>
       ) : (
         <div className="rounded border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
-          Enregistrez d&apos;abord cette AOP pour associer des communes.
+          Sélectionnez d&apos;abord une région pour rechercher des communes.
         </div>
       )}
     </div>
@@ -1064,6 +1019,27 @@ export function AppellationEditor({
   const [error, setError] = useState<string | null>(null);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [cardState, setCardState] = useState<CardState>(defaultCardState);
+  const [communes, setCommunes] = useState<AppellationCommune[]>([]);
+
+  // Load existing commune links when opening an AOP. Resets on AOP switch.
+  useEffect(() => {
+    setCommunes([]);
+    const id = appellation?.id;
+    if (!id) return;
+    let active = true;
+    getAppellationCommunes(id)
+      .then((items) => {
+        if (!active) return;
+        setCommunes(items);
+      })
+      .catch((err: unknown) => {
+        if (!active) return;
+        setError(err instanceof Error ? err.message : "Impossible de charger les communes associées.");
+      });
+    return () => {
+      active = false;
+    };
+  }, [appellation?.id, appellation?.updated_at]);
 
   useEffect(() => {
     setCardState(loadCardState());
@@ -1138,17 +1114,32 @@ export function AppellationEditor({
         is_premium: !!form.is_premium,
         status: form.status,
       };
+      const codes = communes.map((c) => c.code_insee);
       if (isNew) {
         const res = await createAppellation(payload);
-        if (res.error) setError(res.error);
-        else {
+        if (res.error) {
+          setError(res.error);
+        } else {
+          if (res.id) {
+            const linkRes = await setAppellationCommuneLinks(res.id, codes);
+            if (linkRes.error) {
+              setError(linkRes.error);
+              return;
+            }
+          }
           router.refresh();
           onClose();
         }
       } else {
         const res = await updateAppellation(form.id, payload);
-        if (res.error) setError(res.error);
-        else {
+        if (res.error) {
+          setError(res.error);
+        } else {
+          const linkRes = await setAppellationCommuneLinks(form.id, codes);
+          if (linkRes.error) {
+            setError(linkRes.error);
+            return;
+          }
           router.refresh();
           setSavedFeedback(true);
           setTimeout(() => setSavedFeedback(false), 1500);
@@ -1343,7 +1334,12 @@ export function AppellationEditor({
           open={cardState.communes}
           onToggle={() => toggleCard("communes")}
         >
-          <CommuneLinkSelector appellationId={isNew ? null : form.id} onError={setError} />
+          <CommuneLinkSelector
+            value={communes}
+            onChange={setCommunes}
+            regionId={regionId}
+            onError={setError}
+          />
         </CollapsibleCard>
 
         <CollapsibleCard title="Éditorial" open={cardState.editorial} onToggle={() => toggleCard("editorial")}>
