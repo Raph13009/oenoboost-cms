@@ -4,14 +4,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type {
   Appellation,
+  AppellationCommune,
   AppellationLinkedSoilType,
 } from "@/app/admin/(cms)/appellations/actions";
 import {
+  addAppellationCommuneLink,
   addAppellationSoilLink,
   createAppellation,
   deleteAppellation,
+  getAppellationCommunes,
   getAppellationSoilLinkItems,
+  removeAppellationCommuneLink,
   removeAppellationSoilLink,
+  searchCommunesFull,
   searchSoilTypesForAppellationLinks,
   updateAppellation,
 } from "@/app/admin/(cms)/appellations/actions";
@@ -34,6 +39,7 @@ type CardState = {
   identity: boolean;
   production: boolean;
   soilTypes: boolean;
+  communes: boolean;
   editorial: boolean;
   flags: boolean;
   technical: boolean;
@@ -44,6 +50,7 @@ const defaultCardState: CardState = {
   identity: true,
   production: true,
   soilTypes: true,
+  communes: true,
   editorial: true,
   flags: true,
   technical: false,
@@ -60,6 +67,7 @@ function loadCardState(): CardState {
       identity: parsed.identity ?? defaultCardState.identity,
       production: parsed.production ?? defaultCardState.production,
       soilTypes: parsed.soilTypes ?? defaultCardState.soilTypes,
+      communes: parsed.communes ?? defaultCardState.communes,
       editorial: parsed.editorial ?? defaultCardState.editorial,
       flags: parsed.flags ?? defaultCardState.flags,
       // Always closed when entering the page (even if previously expanded).
@@ -465,6 +473,323 @@ function SoilLinkSelector({
       ) : (
         <div className="rounded border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
           Enregistrez d&apos;abord cette AOP pour associer des sols.
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * IntelliJ-style commune picker for an AOP. The dropdown lists `communes_full`
+ * via the `search_communes_full` RPC: case- and accent-insensitive, with
+ * subsequence matching ("SaEti" → "Saint-Étienne"). Selected communes are
+ * persisted in `communes_full_aop_link`.
+ */
+function CommuneLinkSelector({
+  appellationId,
+  onError,
+}: {
+  appellationId: string | null;
+  onError: (message: string | null) => void;
+}) {
+  const [selectedCommunes, setSelectedCommunes] = useState<AppellationCommune[]>([]);
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<AppellationCommune[]>([]);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [busyCode, setBusyCode] = useState<string | null>(null);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [dropdownRect, setDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const requestIdRef = useRef(0);
+
+  const sortCommunes = useCallback((items: AppellationCommune[]) => {
+    return [...items].sort((a, b) => a.name.localeCompare(b.name, "fr", { sensitivity: "base" }));
+  }, []);
+
+  const syncDropdownPosition = useCallback(() => {
+    if (!rootRef.current) {
+      setDropdownRect(null);
+      return;
+    }
+    const rect = rootRef.current.getBoundingClientRect();
+    setDropdownRect({
+      top: rect.bottom + 6,
+      left: rect.left,
+      width: rect.width,
+    });
+  }, []);
+
+  useEffect(() => {
+    setSelectedCommunes([]);
+    setQuery("");
+    setResults([]);
+    setOpen(false);
+    setActiveIndex(0);
+
+    if (!appellationId) return;
+
+    let active = true;
+    getAppellationCommunes(appellationId)
+      .then((items) => {
+        if (!active) return;
+        setSelectedCommunes(sortCommunes(items));
+      })
+      .catch((err: unknown) => {
+        if (!active) return;
+        setSelectedCommunes([]);
+        onError(err instanceof Error ? err.message : "Impossible de charger les communes associées.");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [appellationId, onError, sortCommunes]);
+
+  useEffect(() => {
+    if (!open) return;
+    syncDropdownPosition();
+
+    function handlePointerDown(event: MouseEvent) {
+      const target = event.target as Node;
+      if (rootRef.current?.contains(target) || panelRef.current?.contains(target)) return;
+      setOpen(false);
+    }
+
+    function handleViewportChange() {
+      syncDropdownPosition();
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("resize", handleViewportChange);
+    window.addEventListener("scroll", handleViewportChange, true);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("resize", handleViewportChange);
+      window.removeEventListener("scroll", handleViewportChange, true);
+    };
+  }, [open, syncDropdownPosition]);
+
+  useEffect(() => {
+    if (!open || !appellationId) return;
+
+    const currentRequestId = ++requestIdRef.current;
+    setLoading(true);
+
+    const timeoutId = window.setTimeout(() => {
+      searchCommunesFull(query, 50)
+        .then((items) => {
+          if (requestIdRef.current !== currentRequestId) return;
+          setResults(items);
+          setActiveIndex(0);
+        })
+        .catch((err: unknown) => {
+          if (requestIdRef.current !== currentRequestId) return;
+          setResults([]);
+          onError(err instanceof Error ? err.message : "Impossible de rechercher des communes.");
+        })
+        .finally(() => {
+          if (requestIdRef.current !== currentRequestId) return;
+          setLoading(false);
+          syncDropdownPosition();
+        });
+    }, 180);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [appellationId, onError, open, query, syncDropdownPosition]);
+
+  const visibleResults = useMemo(() => {
+    if (results.length === 0) return [];
+    const selectedCodes = new Set(selectedCommunes.map((item) => item.code_insee));
+    return results.filter((item) => !selectedCodes.has(item.code_insee));
+  }, [results, selectedCommunes]);
+
+  useEffect(() => {
+    if (activeIndex < visibleResults.length) return;
+    setActiveIndex(visibleResults.length > 0 ? visibleResults.length - 1 : 0);
+  }, [activeIndex, visibleResults.length]);
+
+  const handleAdd = useCallback(
+    async (commune: AppellationCommune) => {
+      if (!appellationId) return;
+      if (selectedCommunes.some((item) => item.code_insee === commune.code_insee)) return;
+
+      onError(null);
+      setBusyCode(commune.code_insee);
+      const previous = selectedCommunes;
+      setSelectedCommunes((current) => sortCommunes([...current, commune]));
+      setQuery("");
+      inputRef.current?.focus();
+
+      const res = await addAppellationCommuneLink(appellationId, commune.code_insee);
+      setBusyCode((current) => (current === commune.code_insee ? null : current));
+
+      if (res.error) {
+        setSelectedCommunes(previous);
+        onError(res.error);
+      }
+    },
+    [appellationId, onError, selectedCommunes, sortCommunes]
+  );
+
+  const handleRemove = useCallback(
+    async (commune: AppellationCommune) => {
+      if (!appellationId) return;
+
+      onError(null);
+      setBusyCode(commune.code_insee);
+      const previous = selectedCommunes;
+      setSelectedCommunes((current) => current.filter((item) => item.code_insee !== commune.code_insee));
+
+      const res = await removeAppellationCommuneLink(appellationId, commune.code_insee);
+      setBusyCode((current) => (current === commune.code_insee ? null : current));
+
+      if (res.error) {
+        setSelectedCommunes(previous);
+        onError(res.error);
+      }
+    },
+    [appellationId, onError, selectedCommunes]
+  );
+
+  const handleKeyDown = useCallback(
+    async (event: React.KeyboardEvent<HTMLInputElement>) => {
+      if (!appellationId) return;
+
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        if (!open) {
+          setOpen(true);
+          return;
+        }
+        setActiveIndex((current) => (visibleResults.length === 0 ? 0 : Math.min(current + 1, visibleResults.length - 1)));
+        return;
+      }
+
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        if (!open) {
+          setOpen(true);
+          return;
+        }
+        setActiveIndex((current) => Math.max(current - 1, 0));
+        return;
+      }
+
+      if (event.key === "Enter" && open && visibleResults[activeIndex]) {
+        event.preventDefault();
+        await handleAdd(visibleResults[activeIndex]);
+        return;
+      }
+
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    },
+    [activeIndex, appellationId, handleAdd, open, visibleResults]
+  );
+
+  return (
+    <div className={fieldSpacing}>
+      <div className="flex items-baseline justify-between">
+        <label className={labelClass}>Communes associées</label>
+        <span className="text-[11px] text-slate-500">{selectedCommunes.length}</span>
+      </div>
+
+      {appellationId ? (
+        <>
+          <div ref={rootRef} className="relative">
+            <input
+              ref={inputRef}
+              type="search"
+              value={query}
+              onFocus={() => setOpen(true)}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                if (!open) setOpen(true);
+              }}
+              onKeyDown={handleKeyDown}
+              placeholder="Rechercher une commune (ex: SaEti pour Saint-Étienne)…"
+              className={inputClass}
+            />
+          </div>
+
+          {selectedCommunes.length > 0 ? (
+            <div className="max-h-56 overflow-auto rounded border border-slate-200 bg-white">
+              <ul className="divide-y divide-slate-100">
+                {selectedCommunes.map((commune) => (
+                  <li key={commune.code_insee} className="flex items-center justify-between gap-2 px-2.5 py-1.5">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm text-slate-800">{commune.name}</div>
+                      <div className="font-mono text-[11px] text-slate-400">{commune.code_insee}</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void handleRemove(commune)}
+                      disabled={busyCode === commune.code_insee}
+                      className="shrink-0 rounded-full px-2 py-0.5 text-xs text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 disabled:cursor-wait disabled:opacity-60"
+                      title="Retirer la commune"
+                    >
+                      Retirer
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <div className="text-xs text-slate-500">Aucune commune associée</div>
+          )}
+
+          {open &&
+            dropdownRect &&
+            typeof document !== "undefined" &&
+            createPortal(
+              <div
+                ref={panelRef}
+                className="z-[100] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl shadow-slate-200/60"
+                style={{
+                  position: "fixed",
+                  top: dropdownRect.top,
+                  left: dropdownRect.left,
+                  width: dropdownRect.width,
+                }}
+              >
+                {loading ? (
+                  <div className="px-3 py-2 text-sm text-slate-500">Recherche…</div>
+                ) : visibleResults.length > 0 ? (
+                  <ul className="max-h-72 overflow-auto py-1">
+                    {visibleResults.map((commune, index) => (
+                      <li key={commune.code_insee}>
+                        <button
+                          type="button"
+                          onMouseEnter={() => setActiveIndex(index)}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => void handleAdd(commune)}
+                          className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm transition-colors ${
+                            index === activeIndex ? "bg-slate-100" : "hover:bg-slate-50"
+                          }`}
+                        >
+                          <span className="min-w-0 truncate text-slate-900">{commune.name}</span>
+                          <span className="shrink-0 font-mono text-[11px] text-slate-400">{commune.code_insee}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="px-3 py-2 text-sm text-slate-500">Aucune commune trouvée</div>
+                )}
+              </div>,
+              document.body
+            )}
+        </>
+      ) : (
+        <div className="rounded border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+          Enregistrez d&apos;abord cette AOP pour associer des communes.
         </div>
       )}
     </div>
@@ -1011,6 +1336,14 @@ export function AppellationEditor({
           onToggle={() => toggleCard("soilTypes")}
         >
           <SoilLinkSelector appellationId={isNew ? null : form.id} onError={setError} />
+        </CollapsibleCard>
+
+        <CollapsibleCard
+          title="Communes"
+          open={cardState.communes}
+          onToggle={() => toggleCard("communes")}
+        >
+          <CommuneLinkSelector appellationId={isNew ? null : form.id} onError={setError} />
         </CollapsibleCard>
 
         <CollapsibleCard title="Éditorial" open={cardState.editorial} onToggle={() => toggleCard("editorial")}>

@@ -735,3 +735,100 @@ export async function setAppellationSoilLinks(
   revalidatePath("/admin/appellations");
   return {};
 }
+
+/**
+ * Communes attached to an AOP via `communes_full_aop_link`.
+ * `code_insee` is the PK of `communes_full`.
+ */
+export type AppellationCommune = {
+  code_insee: string;
+  name: string;
+};
+
+type CommuneRelation = { code_insee: string; name: string | null } | { code_insee: string; name: string | null }[] | null;
+
+export async function getAppellationCommunes(
+  appellationId: string
+): Promise<AppellationCommune[]> {
+  const aopId = toNumberId(appellationId);
+  if (aopId === null) return [];
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("communes_full_aop_link")
+    .select(
+      `
+      commune_code_insee,
+      communes_full!commune_code_insee(code_insee, name)
+    `
+    )
+    .eq("aop_id", aopId);
+  if (error) throw new Error(error.message);
+
+  return ((data ?? []) as Array<{ commune_code_insee: string; communes_full: CommuneRelation }>)
+    .map((row) => {
+      const commune = getFirstRelation(row.communes_full);
+      const code = commune?.code_insee ?? row.commune_code_insee;
+      const name = commune?.name ?? null;
+      if (!code) return null;
+      return { code_insee: code, name: name ?? code };
+    })
+    .filter((row): row is AppellationCommune => row !== null)
+    .sort((a, b) => a.name.localeCompare(b.name, "fr", { sensitivity: "base" }));
+}
+
+/**
+ * IntelliJ-style fuzzy search over `communes_full` (case + accent insensitive,
+ * subsequence match). Backed by the `search_communes_full` Postgres function
+ * (see `docs/sql/create_search_communes_full_rpc.sql`).
+ */
+export async function searchCommunesFull(
+  query: string,
+  limit = 50
+): Promise<AppellationCommune[]> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase.rpc("search_communes_full", {
+    p_query: query ?? "",
+    p_limit: Math.min(Math.max(limit, 1), 200),
+  });
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as Array<{ code_insee: string; name: string | null }>)
+    .filter((row) => !!row.code_insee)
+    .map((row) => ({ code_insee: row.code_insee, name: row.name ?? row.code_insee }));
+}
+
+export async function addAppellationCommuneLink(
+  appellationId: string,
+  codeInsee: string
+): Promise<{ error?: string }> {
+  const aopId = toNumberId(appellationId);
+  if (aopId === null) return { error: "Identifiant AOP invalide." };
+  if (!codeInsee) return { error: "Code INSEE manquant." };
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from("communes_full_aop_link")
+    .upsert(
+      { aop_id: aopId, commune_code_insee: codeInsee },
+      { onConflict: "aop_id,commune_code_insee", ignoreDuplicates: true }
+    );
+  if (error) return { error: error.message };
+  revalidatePath("/admin/appellations");
+  return {};
+}
+
+export async function removeAppellationCommuneLink(
+  appellationId: string,
+  codeInsee: string
+): Promise<{ error?: string }> {
+  const aopId = toNumberId(appellationId);
+  if (aopId === null) return { error: "Identifiant AOP invalide." };
+  if (!codeInsee) return { error: "Code INSEE manquant." };
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from("communes_full_aop_link")
+    .delete()
+    .eq("aop_id", aopId)
+    .eq("commune_code_insee", codeInsee);
+  if (error) return { error: error.message };
+  revalidatePath("/admin/appellations");
+  return {};
+}
