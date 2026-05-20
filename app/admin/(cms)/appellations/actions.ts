@@ -36,6 +36,8 @@ export type Appellation = {
   colors_grapes_en: string | null;
   soils_description_fr: string | null;
   soils_description_en: string | null;
+  climate_fr: string | null;
+  climate_en: string | null;
   is_premium: boolean;
   status: string;
   published_at: string | null;
@@ -104,7 +106,13 @@ function toNumberId(id: string | number | null | undefined): number | null {
 
 const AOP_LIST_COLUMNS = "id,slug,name,status,updated_at";
 const AOP_DETAIL_COLUMNS =
-  "id,slug,name,area_m2,area_hectares,producer_count,production_volume_hl,price_range_min_eur,price_range_max_eur,history_fr,history_en,colors_grapes_fr,colors_grapes_en,soils_description_fr,soils_description_en,wine_pct_red,wine_pct_white,wine_pct_sparkling,wine_pct_liqueur,is_premium,status,published_at,created_at,updated_at,deleted_at";
+  "id,slug,name,area_m2,area_hectares,producer_count,production_volume_hl,price_range_min_eur,price_range_max_eur,history_fr,history_en,colors_grapes_fr,colors_grapes_en,soils_description_fr,soils_description_en,climate_fr,climate_en,wine_pct_red,wine_pct_white,wine_pct_sparkling,wine_pct_liqueur,is_premium,status,published_at,created_at,updated_at,deleted_at";
+
+function trimNullableText(value: string | null | undefined): string | null {
+  if (value == null) return null;
+  const trimmed = value.trim();
+  return trimmed === "" ? null : trimmed;
+}
 
 export type SubregionLite = { id: string; region_id: string; name_fr: string };
 
@@ -387,6 +395,8 @@ export async function getAppellation(id: string): Promise<Appellation | null> {
     colors_grapes_en: (row.colors_grapes_en as string | null) ?? null,
     soils_description_fr: (row.soils_description_fr as string | null) ?? null,
     soils_description_en: (row.soils_description_en as string | null) ?? null,
+    climate_fr: (row.climate_fr as string | null) ?? null,
+    climate_en: (row.climate_en as string | null) ?? null,
     wine_pct_red: (row.wine_pct_red as number | null) ?? null,
     wine_pct_white: (row.wine_pct_white as number | null) ?? null,
     wine_pct_sparkling: (row.wine_pct_sparkling as number | null) ?? null,
@@ -433,6 +443,8 @@ function formToRow(form: AppellationForm): Record<string, unknown> {
     colors_grapes_en: form.colors_grapes_en || null,
     soils_description_fr: form.soils_description_fr || null,
     soils_description_en: form.soils_description_en || null,
+    climate_fr: trimNullableText(form.climate_fr),
+    climate_en: trimNullableText(form.climate_en),
     wine_pct_red: form.wine_pct_red ?? null,
     wine_pct_white: form.wine_pct_white ?? null,
     wine_pct_sparkling: form.wine_pct_sparkling ?? null,

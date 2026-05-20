@@ -41,6 +41,7 @@ type CardState = {
   production: boolean;
   wineColor: boolean;
   soilTypes: boolean;
+  climate: boolean;
   communes: boolean;
   editorial: boolean;
   flags: boolean;
@@ -53,6 +54,7 @@ const defaultCardState: CardState = {
   production: true,
   wineColor: true,
   soilTypes: true,
+  climate: true,
   communes: true,
   editorial: true,
   flags: true,
@@ -71,6 +73,7 @@ function loadCardState(): CardState {
       production: parsed.production ?? defaultCardState.production,
       wineColor: parsed.wineColor ?? defaultCardState.wineColor,
       soilTypes: parsed.soilTypes ?? defaultCardState.soilTypes,
+      climate: parsed.climate ?? defaultCardState.climate,
       communes: parsed.communes ?? defaultCardState.communes,
       editorial: parsed.editorial ?? defaultCardState.editorial,
       flags: parsed.flags ?? defaultCardState.flags,
@@ -995,6 +998,8 @@ const emptyForm = (): Appellation => ({
   colors_grapes_en: null,
   soils_description_fr: null,
   soils_description_en: null,
+  climate_fr: null,
+  climate_en: null,
   wine_pct_red: null,
   wine_pct_white: null,
   wine_pct_sparkling: null,
@@ -1130,6 +1135,8 @@ export function AppellationEditor({
         colors_grapes_en: form.colors_grapes_en || null,
         soils_description_fr: form.soils_description_fr || null,
         soils_description_en: form.soils_description_en || null,
+        climate_fr: form.climate_fr?.trim() || null,
+        climate_en: form.climate_en?.trim() || null,
         wine_pct_red: form.wine_pct_red ?? null,
         wine_pct_white: form.wine_pct_white ?? null,
         wine_pct_sparkling: form.wine_pct_sparkling ?? null,
@@ -1368,6 +1375,34 @@ export function AppellationEditor({
           onToggle={() => toggleCard("soilTypes")}
         >
           <SoilLinkSelector appellationId={isNew ? null : form.id} onError={setError} />
+        </CollapsibleCard>
+
+        <CollapsibleCard title="Climat" open={cardState.climate} onToggle={() => toggleCard("climate")}>
+          <div className={fieldSpacing}>
+            <p className="text-xs text-slate-500">
+              Décrivez le climat typique de l&apos;appellation (températures, pluviométrie, influence
+              océanique/montagne, saisons…). Laissez vide si non renseigné — la section ne
+              s&apos;affichera pas sur la fiche publique.
+            </p>
+            <div>
+              <label className={labelClass}>Climat (FR)</label>
+              <AutoResizeTextarea
+                value={form.climate_fr ?? ""}
+                onChange={(e) => update({ climate_fr: e.target.value || null })}
+                minRows={4}
+                className="min-h-[6rem] w-full resize-y rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 focus:border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-200"
+              />
+            </div>
+            <div>
+              <label className={labelClass}>Climat (EN)</label>
+              <AutoResizeTextarea
+                value={form.climate_en ?? ""}
+                onChange={(e) => update({ climate_en: e.target.value || null })}
+                minRows={4}
+                className="min-h-[6rem] w-full resize-y rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 focus:border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-200"
+              />
+            </div>
+          </div>
         </CollapsibleCard>
 
         <CollapsibleCard

@@ -19,6 +19,8 @@
 | `colors_grapes_en` | `text` |  Nullable |
 | `soils_description_fr` | `text` |  Nullable |
 | `soils_description_en` | `text` |  Nullable |
+| `climate_fr` | `text` |  Nullable |
+| `climate_en` | `text` |  Nullable |
 | `wine_pct_red` | `int2` |  Nullable |
 | `wine_pct_white` | `int2` |  Nullable |
 | `wine_pct_sparkling` | `int2` |  Nullable |
