@@ -7,6 +7,7 @@ import {
   normalizeSubregionIds,
   validatePublishedAppellationLinkState,
 } from "./link-sync";
+import { validateWineColorBreakdown } from "@/lib/aop-wine-color-breakdown";
 
 /**
  * Type representing a row of the new `aop` table (int4 ids).
@@ -41,6 +42,10 @@ export type Appellation = {
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
+  wine_pct_red: number | null;
+  wine_pct_white: number | null;
+  wine_pct_sparkling: number | null;
+  wine_pct_liqueur: number | null;
   /** From join: subregions.name_fr (new int4 table). */
   subregion_name_fr?: string | null;
   /** From join through subregion: wine_regions.name_fr (uuid). */
@@ -99,7 +104,7 @@ function toNumberId(id: string | number | null | undefined): number | null {
 
 const AOP_LIST_COLUMNS = "id,slug,name,status,updated_at";
 const AOP_DETAIL_COLUMNS =
-  "id,slug,name,area_m2,area_hectares,producer_count,production_volume_hl,price_range_min_eur,price_range_max_eur,history_fr,history_en,colors_grapes_fr,colors_grapes_en,soils_description_fr,soils_description_en,is_premium,status,published_at,created_at,updated_at,deleted_at";
+  "id,slug,name,area_m2,area_hectares,producer_count,production_volume_hl,price_range_min_eur,price_range_max_eur,history_fr,history_en,colors_grapes_fr,colors_grapes_en,soils_description_fr,soils_description_en,wine_pct_red,wine_pct_white,wine_pct_sparkling,wine_pct_liqueur,is_premium,status,published_at,created_at,updated_at,deleted_at";
 
 export type SubregionLite = { id: string; region_id: string; name_fr: string };
 
@@ -382,6 +387,10 @@ export async function getAppellation(id: string): Promise<Appellation | null> {
     colors_grapes_en: (row.colors_grapes_en as string | null) ?? null,
     soils_description_fr: (row.soils_description_fr as string | null) ?? null,
     soils_description_en: (row.soils_description_en as string | null) ?? null,
+    wine_pct_red: (row.wine_pct_red as number | null) ?? null,
+    wine_pct_white: (row.wine_pct_white as number | null) ?? null,
+    wine_pct_sparkling: (row.wine_pct_sparkling as number | null) ?? null,
+    wine_pct_liqueur: (row.wine_pct_liqueur as number | null) ?? null,
     is_premium: !!row.is_premium,
     status: (row.status as string) ?? "draft",
     published_at: (row.published_at as string | null) ?? null,
@@ -424,6 +433,10 @@ function formToRow(form: AppellationForm): Record<string, unknown> {
     colors_grapes_en: form.colors_grapes_en || null,
     soils_description_fr: form.soils_description_fr || null,
     soils_description_en: form.soils_description_en || null,
+    wine_pct_red: form.wine_pct_red ?? null,
+    wine_pct_white: form.wine_pct_white ?? null,
+    wine_pct_sparkling: form.wine_pct_sparkling ?? null,
+    wine_pct_liqueur: form.wine_pct_liqueur ?? null,
     is_premium: !!form.is_premium,
     status: form.status || "draft",
     published_at: form.published_at || null,
@@ -521,6 +534,9 @@ export async function createAppellation(
   );
   if (linkValidationError) return { error: linkValidationError };
 
+  const winePctError = validateWineColorBreakdown(form);
+  if (winePctError) return { error: winePctError };
+
   const row = formToRow(form);
   const { data, error } = await supabase.from("aop").insert(row).select("id").single();
   if (error) return { error: error.message };
@@ -574,6 +590,9 @@ export async function updateAppellation(
     });
     return { error: linkValidationError };
   }
+
+  const winePctError = validateWineColorBreakdown(form);
+  if (winePctError) return { error: winePctError };
 
   const row = formToRow(form);
   const { error } = await supabase.from("aop").update(row).eq("id", aopId);

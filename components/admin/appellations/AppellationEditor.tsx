@@ -22,6 +22,8 @@ import {
 import { useRouter } from "next/navigation";
 import { ChevronDown } from "lucide-react";
 import { ConfirmDialog } from "@/components/admin/ConfirmDialog";
+import { AopWineColorBreakdownField } from "@/components/admin/appellations/AopWineColorBreakdownField";
+import { validateWineColorBreakdown } from "@/lib/aop-wine-color-breakdown";
 
 const cardClass =
   "rounded-lg border border-slate-200 bg-slate-50/50 shadow-sm overflow-hidden";
@@ -37,6 +39,7 @@ const CARD_STATE_KEY = "cms-appellations-card-state";
 type CardState = {
   identity: boolean;
   production: boolean;
+  wineColor: boolean;
   soilTypes: boolean;
   communes: boolean;
   editorial: boolean;
@@ -48,6 +51,7 @@ type CardState = {
 const defaultCardState: CardState = {
   identity: true,
   production: true,
+  wineColor: true,
   soilTypes: true,
   communes: true,
   editorial: true,
@@ -65,6 +69,7 @@ function loadCardState(): CardState {
     return {
       identity: parsed.identity ?? defaultCardState.identity,
       production: parsed.production ?? defaultCardState.production,
+      wineColor: parsed.wineColor ?? defaultCardState.wineColor,
       soilTypes: parsed.soilTypes ?? defaultCardState.soilTypes,
       communes: parsed.communes ?? defaultCardState.communes,
       editorial: parsed.editorial ?? defaultCardState.editorial,
@@ -990,6 +995,10 @@ const emptyForm = (): Appellation => ({
   colors_grapes_en: null,
   soils_description_fr: null,
   soils_description_en: null,
+  wine_pct_red: null,
+  wine_pct_white: null,
+  wine_pct_sparkling: null,
+  wine_pct_liqueur: null,
   is_premium: false,
   status: "draft",
   published_at: null,
@@ -1092,6 +1101,17 @@ export function AppellationEditor({
 
   const handleSave = async () => {
     setError(null);
+    const winePctError = validateWineColorBreakdown({
+      wine_pct_red: form.wine_pct_red,
+      wine_pct_white: form.wine_pct_white,
+      wine_pct_sparkling: form.wine_pct_sparkling,
+      wine_pct_liqueur: form.wine_pct_liqueur,
+    });
+    if (winePctError) {
+      setError(winePctError);
+      return;
+    }
+
     setSaving(true);
     try {
       const payload = {
@@ -1110,6 +1130,10 @@ export function AppellationEditor({
         colors_grapes_en: form.colors_grapes_en || null,
         soils_description_fr: form.soils_description_fr || null,
         soils_description_en: form.soils_description_en || null,
+        wine_pct_red: form.wine_pct_red ?? null,
+        wine_pct_white: form.wine_pct_white ?? null,
+        wine_pct_sparkling: form.wine_pct_sparkling ?? null,
+        wine_pct_liqueur: form.wine_pct_liqueur ?? null,
         published_at: form.published_at || null,
         is_premium: !!form.is_premium,
         status: form.status,
@@ -1319,6 +1343,23 @@ export function AppellationEditor({
               </div>
             </div>
           </div>
+        </CollapsibleCard>
+
+        <CollapsibleCard
+          title="Répartition par couleur"
+          open={cardState.wineColor}
+          onToggle={() => toggleCard("wineColor")}
+        >
+          <AopWineColorBreakdownField
+            value={{
+              wine_pct_red: form.wine_pct_red,
+              wine_pct_white: form.wine_pct_white,
+              wine_pct_sparkling: form.wine_pct_sparkling,
+              wine_pct_liqueur: form.wine_pct_liqueur,
+            }}
+            onChange={(next) => update(next)}
+            disabled={saving}
+          />
         </CollapsibleCard>
 
         <CollapsibleCard
