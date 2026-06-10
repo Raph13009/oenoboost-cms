@@ -25,6 +25,8 @@ export type Appellation = {
   /** Single name field replacing the previous bilingual `name_fr` / `name_en`. */
   name: string;
   area_hectares: number | null;
+  /** Année de reconnaissance AOP (`recognition_year`, smallint nullable). */
+  recognition_year: number | null;
   area_m2: number | null;
   producer_count: number | null;
   production_volume_hl: number | null;
@@ -106,7 +108,18 @@ function toNumberId(id: string | number | null | undefined): number | null {
 
 const AOP_LIST_COLUMNS = "id,slug,name,status,updated_at";
 const AOP_DETAIL_COLUMNS =
-  "id,slug,name,area_m2,area_hectares,producer_count,production_volume_hl,price_range_min_eur,price_range_max_eur,history_fr,history_en,colors_grapes_fr,colors_grapes_en,soils_description_fr,soils_description_en,climate_fr,climate_en,wine_pct_red,wine_pct_white,wine_pct_sparkling,wine_pct_liqueur,is_premium,status,published_at,created_at,updated_at,deleted_at";
+  "id,slug,name,area_m2,area_hectares,recognition_year,producer_count,production_volume_hl,price_range_min_eur,price_range_max_eur,history_fr,history_en,colors_grapes_fr,colors_grapes_en,soils_description_fr,soils_description_en,climate_fr,climate_en,wine_pct_red,wine_pct_white,wine_pct_sparkling,wine_pct_liqueur,is_premium,status,published_at,created_at,updated_at,deleted_at";
+
+const RECOGNITION_YEAR_MIN = 1800;
+const RECOGNITION_YEAR_MAX = 2100;
+
+export function validateRecognitionYear(year: number | null | undefined): string | null {
+  if (year == null) return null;
+  if (!Number.isInteger(year) || year < RECOGNITION_YEAR_MIN || year > RECOGNITION_YEAR_MAX) {
+    return `La date AOP doit être une année entre ${RECOGNITION_YEAR_MIN} et ${RECOGNITION_YEAR_MAX}.`;
+  }
+  return null;
+}
 
 function trimNullableText(value: string | null | undefined): string | null {
   if (value == null) return null;
@@ -385,6 +398,7 @@ export async function getAppellation(id: string): Promise<Appellation | null> {
     name: (row.name as string) ?? "",
     area_m2: (row.area_m2 as number | null) ?? null,
     area_hectares: (row.area_hectares as number | null) ?? null,
+    recognition_year: (row.recognition_year as number | null) ?? null,
     producer_count: (row.producer_count as number | null) ?? null,
     production_volume_hl: (row.production_volume_hl as number | null) ?? null,
     price_range_min_eur: (row.price_range_min_eur as number | null) ?? null,
@@ -432,6 +446,7 @@ function formToRow(form: AppellationForm): Record<string, unknown> {
     slug: form.slug || null,
     name: form.name || "",
     area_hectares: form.area_hectares ?? null,
+    recognition_year: form.recognition_year ?? null,
     area_m2: form.area_m2 ?? null,
     producer_count: form.producer_count ?? null,
     production_volume_hl: form.production_volume_hl ?? null,
@@ -549,6 +564,9 @@ export async function createAppellation(
   const winePctError = validateWineColorBreakdown(form);
   if (winePctError) return { error: winePctError };
 
+  const recognitionYearError = validateRecognitionYear(form.recognition_year);
+  if (recognitionYearError) return { error: recognitionYearError };
+
   const row = formToRow(form);
   const { data, error } = await supabase.from("aop").insert(row).select("id").single();
   if (error) return { error: error.message };
@@ -605,6 +623,9 @@ export async function updateAppellation(
 
   const winePctError = validateWineColorBreakdown(form);
   if (winePctError) return { error: winePctError };
+
+  const recognitionYearError = validateRecognitionYear(form.recognition_year);
+  if (recognitionYearError) return { error: recognitionYearError };
 
   const row = formToRow(form);
   const { error } = await supabase.from("aop").update(row).eq("id", aopId);
