@@ -18,12 +18,15 @@ import {
   searchSoilTypesForAppellationLinks,
   setAppellationCommuneLinks,
   updateAppellation,
+  validateRecognitionYear,
 } from "@/app/admin/(cms)/appellations/actions";
 import { useRouter } from "next/navigation";
 import { ChevronDown } from "lucide-react";
 import { ConfirmDialog } from "@/components/admin/ConfirmDialog";
 import { AopWineColorBreakdownField } from "@/components/admin/appellations/AopWineColorBreakdownField";
+import { CmsRichTextEditor } from "@/components/admin/shared/CmsRichTextEditor";
 import { validateWineColorBreakdown } from "@/lib/aop-wine-color-breakdown";
+import { normalizeRichTextForStorage } from "@/lib/richtext-html";
 
 const cardClass =
   "rounded-lg border border-slate-200 bg-slate-50/50 shadow-sm overflow-hidden";
@@ -127,39 +130,6 @@ function CollapsibleCard({
         <div className={cardPadding}>{children}</div>
       </div>
     </section>
-  );
-}
-
-function AutoResizeTextarea({
-  value,
-  onChange,
-  className,
-  minRows = 2,
-  ...props
-}: {
-  value: string;
-  onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
-  className?: string;
-  minRows?: number;
-} & Omit<React.TextareaHTMLAttributes<HTMLTextAreaElement>, "value" | "onChange">) {
-  const ref = useRef<HTMLTextAreaElement>(null);
-  const minHeight = minRows * 20;
-  useEffect(() => {
-    const ta = ref.current;
-    if (!ta) return;
-    ta.style.height = "auto";
-    ta.style.height = `${Math.max(ta.scrollHeight, minHeight)}px`;
-  }, [value, minHeight]);
-  return (
-    <textarea
-      ref={ref}
-      value={value}
-      onChange={onChange}
-      rows={minRows}
-      className={className}
-      style={{ overflow: "hidden" }}
-      {...props}
-    />
   );
 }
 
@@ -987,6 +957,7 @@ const emptyForm = (): Appellation => ({
   slug: "",
   name: "",
   area_hectares: null,
+  recognition_year: null,
   area_m2: null,
   producer_count: null,
   production_volume_hl: null,
@@ -1116,6 +1087,11 @@ export function AppellationEditor({
       setError(winePctError);
       return;
     }
+    const recognitionYearError = validateRecognitionYear(form.recognition_year);
+    if (recognitionYearError) {
+      setError(recognitionYearError);
+      return;
+    }
 
     setSaving(true);
     try {
@@ -1124,19 +1100,20 @@ export function AppellationEditor({
         slug: form.slug,
         name: form.name,
         area_hectares: form.area_hectares ?? null,
+        recognition_year: form.recognition_year ?? null,
         area_m2: form.area_m2 ?? null,
         producer_count: form.producer_count ?? null,
         production_volume_hl: form.production_volume_hl ?? null,
         price_range_min_eur: form.price_range_min_eur ?? null,
         price_range_max_eur: form.price_range_max_eur ?? null,
-        history_fr: form.history_fr || null,
-        history_en: form.history_en || null,
-        colors_grapes_fr: form.colors_grapes_fr || null,
-        colors_grapes_en: form.colors_grapes_en || null,
-        soils_description_fr: form.soils_description_fr || null,
-        soils_description_en: form.soils_description_en || null,
-        climate_fr: form.climate_fr?.trim() || null,
-        climate_en: form.climate_en?.trim() || null,
+        history_fr: normalizeRichTextForStorage(form.history_fr),
+        history_en: normalizeRichTextForStorage(form.history_en),
+        colors_grapes_fr: normalizeRichTextForStorage(form.colors_grapes_fr),
+        colors_grapes_en: normalizeRichTextForStorage(form.colors_grapes_en),
+        soils_description_fr: normalizeRichTextForStorage(form.soils_description_fr),
+        soils_description_en: normalizeRichTextForStorage(form.soils_description_en),
+        climate_fr: normalizeRichTextForStorage(form.climate_fr),
+        climate_en: normalizeRichTextForStorage(form.climate_en),
         wine_pct_red: form.wine_pct_red ?? null,
         wine_pct_white: form.wine_pct_white ?? null,
         wine_pct_sparkling: form.wine_pct_sparkling ?? null,
@@ -1305,6 +1282,23 @@ export function AppellationEditor({
                 />
               </div>
               <div>
+                <label className={labelClass}>Date AOP</label>
+                <input
+                  type="number"
+                  min={1800}
+                  max={2100}
+                  step={1}
+                  placeholder="Année"
+                  value={form.recognition_year ?? ""}
+                  onChange={(e) =>
+                    update({
+                      recognition_year: e.target.value === "" ? null : Number.parseInt(e.target.value, 10),
+                    })
+                  }
+                  className={inputClass}
+                />
+              </div>
+              <div>
                 <label className={labelClass}>Nombre de producteurs</label>
                 <input
                   type="number"
@@ -1386,20 +1380,22 @@ export function AppellationEditor({
             </p>
             <div>
               <label className={labelClass}>Climat (FR)</label>
-              <AutoResizeTextarea
+              <CmsRichTextEditor
+                key={`${form.id || "new"}-climate-fr`}
                 value={form.climate_fr ?? ""}
-                onChange={(e) => update({ climate_fr: e.target.value || null })}
-                minRows={4}
-                className="min-h-[6rem] w-full resize-y rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 focus:border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-200"
+                onChange={(html) => update({ climate_fr: html || null })}
+                placeholder="Décrivez le climat en français…"
+                minHeightClass="min-h-[6rem]"
               />
             </div>
             <div>
               <label className={labelClass}>Climat (EN)</label>
-              <AutoResizeTextarea
+              <CmsRichTextEditor
+                key={`${form.id || "new"}-climate-en`}
                 value={form.climate_en ?? ""}
-                onChange={(e) => update({ climate_en: e.target.value || null })}
-                minRows={4}
-                className="min-h-[6rem] w-full resize-y rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 focus:border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-200"
+                onChange={(html) => update({ climate_en: html || null })}
+                placeholder="Describe the climate in English…"
+                minHeightClass="min-h-[6rem]"
               />
             </div>
           </div>
@@ -1422,56 +1418,62 @@ export function AppellationEditor({
           <div className={fieldSpacing}>
             <div>
               <label className={labelClass}>Histoire (FR)</label>
-              <AutoResizeTextarea
+              <CmsRichTextEditor
+                key={`${form.id || "new"}-history-fr`}
                 value={form.history_fr ?? ""}
-                onChange={(e) => update({ history_fr: e.target.value || null })}
-                minRows={2}
-                className="min-h-[4rem] w-full resize-none rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 focus:border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-200"
+                onChange={(html) => update({ history_fr: html || null })}
+                placeholder="Histoire de l'appellation en français…"
+                minHeightClass="min-h-[5rem]"
               />
             </div>
             <div>
               <label className={labelClass}>Histoire (EN)</label>
-              <AutoResizeTextarea
+              <CmsRichTextEditor
+                key={`${form.id || "new"}-history-en`}
                 value={form.history_en ?? ""}
-                onChange={(e) => update({ history_en: e.target.value || null })}
-                minRows={2}
-                className="min-h-[4rem] w-full resize-none rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 focus:border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-200"
+                onChange={(html) => update({ history_en: html || null })}
+                placeholder="Appellation history in English…"
+                minHeightClass="min-h-[5rem]"
               />
             </div>
             <div>
               <label className={labelClass}>Couleurs / cépages (FR)</label>
-              <AutoResizeTextarea
+              <CmsRichTextEditor
+                key={`${form.id || "new"}-colors-grapes-fr`}
                 value={form.colors_grapes_fr ?? ""}
-                onChange={(e) => update({ colors_grapes_fr: e.target.value || null })}
-                minRows={2}
-                className="min-h-[4rem] w-full resize-none rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 focus:border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-200"
+                onChange={(html) => update({ colors_grapes_fr: html || null })}
+                placeholder="Couleurs et cépages en français…"
+                minHeightClass="min-h-[5rem]"
               />
             </div>
             <div>
               <label className={labelClass}>Couleurs / cépages (EN)</label>
-              <AutoResizeTextarea
+              <CmsRichTextEditor
+                key={`${form.id || "new"}-colors-grapes-en`}
                 value={form.colors_grapes_en ?? ""}
-                onChange={(e) => update({ colors_grapes_en: e.target.value || null })}
-                minRows={2}
-                className="min-h-[4rem] w-full resize-none rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 focus:border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-200"
+                onChange={(html) => update({ colors_grapes_en: html || null })}
+                placeholder="Wine colors and grape varieties in English…"
+                minHeightClass="min-h-[5rem]"
               />
             </div>
             <div>
               <label className={labelClass}>Description des sols (FR)</label>
-              <AutoResizeTextarea
+              <CmsRichTextEditor
+                key={`${form.id || "new"}-soils-fr`}
                 value={form.soils_description_fr ?? ""}
-                onChange={(e) => update({ soils_description_fr: e.target.value || null })}
-                minRows={2}
-                className="min-h-[4rem] w-full resize-none rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 focus:border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-200"
+                onChange={(html) => update({ soils_description_fr: html || null })}
+                placeholder="Description des sols en français…"
+                minHeightClass="min-h-[5rem]"
               />
             </div>
             <div>
               <label className={labelClass}>Description des sols (EN)</label>
-              <AutoResizeTextarea
+              <CmsRichTextEditor
+                key={`${form.id || "new"}-soils-en`}
                 value={form.soils_description_en ?? ""}
-                onChange={(e) => update({ soils_description_en: e.target.value || null })}
-                minRows={2}
-                className="min-h-[4rem] w-full resize-none rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 focus:border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-200"
+                onChange={(html) => update({ soils_description_en: html || null })}
+                placeholder="Soil description in English…"
+                minHeightClass="min-h-[5rem]"
               />
             </div>
             <div className="grid grid-cols-2 gap-x-3 gap-y-2.5">
