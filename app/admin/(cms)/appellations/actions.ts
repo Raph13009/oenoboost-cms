@@ -7,6 +7,7 @@ import {
   normalizeSubregionIds,
   validatePublishedAppellationLinkState,
 } from "./link-sync";
+import { validateRecognitionYear } from "@/lib/aop-recognition-year";
 import { validateWineColorBreakdown } from "@/lib/aop-wine-color-breakdown";
 
 /**
@@ -109,17 +110,6 @@ function toNumberId(id: string | number | null | undefined): number | null {
 const AOP_LIST_COLUMNS = "id,slug,name,status,updated_at";
 const AOP_DETAIL_COLUMNS =
   "id,slug,name,area_m2,area_hectares,recognition_year,producer_count,production_volume_hl,price_range_min_eur,price_range_max_eur,history_fr,history_en,colors_grapes_fr,colors_grapes_en,soils_description_fr,soils_description_en,climate_fr,climate_en,wine_pct_red,wine_pct_white,wine_pct_sparkling,wine_pct_liqueur,is_premium,status,published_at,created_at,updated_at,deleted_at";
-
-const RECOGNITION_YEAR_MIN = 1800;
-const RECOGNITION_YEAR_MAX = 2100;
-
-export function validateRecognitionYear(year: number | null | undefined): string | null {
-  if (year == null) return null;
-  if (!Number.isInteger(year) || year < RECOGNITION_YEAR_MIN || year > RECOGNITION_YEAR_MAX) {
-    return `La date AOP doit être une année entre ${RECOGNITION_YEAR_MIN} et ${RECOGNITION_YEAR_MAX}.`;
-  }
-  return null;
-}
 
 function trimNullableText(value: string | null | undefined): string | null {
   if (value == null) return null;

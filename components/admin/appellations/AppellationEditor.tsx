@@ -18,13 +18,13 @@ import {
   searchSoilTypesForAppellationLinks,
   setAppellationCommuneLinks,
   updateAppellation,
-  validateRecognitionYear,
 } from "@/app/admin/(cms)/appellations/actions";
 import { useRouter } from "next/navigation";
 import { ChevronDown } from "lucide-react";
 import { ConfirmDialog } from "@/components/admin/ConfirmDialog";
 import { AopWineColorBreakdownField } from "@/components/admin/appellations/AopWineColorBreakdownField";
 import { CmsRichTextEditor } from "@/components/admin/shared/CmsRichTextEditor";
+import { validateRecognitionYear } from "@/lib/aop-recognition-year";
 import { validateWineColorBreakdown } from "@/lib/aop-wine-color-breakdown";
 import { normalizeRichTextForStorage } from "@/lib/richtext-html";
 
