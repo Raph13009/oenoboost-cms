@@ -5,7 +5,7 @@ import {
   hasWineColorBreakdownData,
   validateWineColorBreakdown,
   wineColorBreakdownTotal,
-} from "./aop-wine-color-breakdown";
+} from "./aop-wine-color-breakdown.ts";
 
 describe("validateWineColorBreakdown", () => {
   it("accepts all-null breakdown", () => {
