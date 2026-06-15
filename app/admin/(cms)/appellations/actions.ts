@@ -48,6 +48,7 @@ export type Appellation = {
   updated_at: string;
   deleted_at: string | null;
   wine_pct_red: number | null;
+  wine_pct_rose: number | null;
   wine_pct_white: number | null;
   wine_pct_sparkling: number | null;
   wine_pct_liqueur: number | null;
@@ -109,7 +110,7 @@ function toNumberId(id: string | number | null | undefined): number | null {
 
 const AOP_LIST_COLUMNS = "id,slug,name,status,updated_at";
 const AOP_DETAIL_COLUMNS =
-  "id,slug,name,area_m2,area_hectares,recognition_year,producer_count,production_volume_hl,price_range_min_eur,price_range_max_eur,history_fr,history_en,colors_grapes_fr,colors_grapes_en,soils_description_fr,soils_description_en,climate_fr,climate_en,wine_pct_red,wine_pct_white,wine_pct_sparkling,wine_pct_liqueur,is_premium,status,published_at,created_at,updated_at,deleted_at";
+  "id,slug,name,area_m2,area_hectares,recognition_year,producer_count,production_volume_hl,price_range_min_eur,price_range_max_eur,history_fr,history_en,colors_grapes_fr,colors_grapes_en,soils_description_fr,soils_description_en,climate_fr,climate_en,wine_pct_red,wine_pct_rose,wine_pct_white,wine_pct_sparkling,wine_pct_liqueur,is_premium,status,published_at,created_at,updated_at,deleted_at";
 
 function trimNullableText(value: string | null | undefined): string | null {
   if (value == null) return null;
@@ -402,6 +403,7 @@ export async function getAppellation(id: string): Promise<Appellation | null> {
     climate_fr: (row.climate_fr as string | null) ?? null,
     climate_en: (row.climate_en as string | null) ?? null,
     wine_pct_red: (row.wine_pct_red as number | null) ?? null,
+    wine_pct_rose: (row.wine_pct_rose as number | null) ?? null,
     wine_pct_white: (row.wine_pct_white as number | null) ?? null,
     wine_pct_sparkling: (row.wine_pct_sparkling as number | null) ?? null,
     wine_pct_liqueur: (row.wine_pct_liqueur as number | null) ?? null,
@@ -451,6 +453,7 @@ function formToRow(form: AppellationForm): Record<string, unknown> {
     climate_fr: trimNullableText(form.climate_fr),
     climate_en: trimNullableText(form.climate_en),
     wine_pct_red: form.wine_pct_red ?? null,
+    wine_pct_rose: form.wine_pct_rose ?? null,
     wine_pct_white: form.wine_pct_white ?? null,
     wine_pct_sparkling: form.wine_pct_sparkling ?? null,
     wine_pct_liqueur: form.wine_pct_liqueur ?? null,

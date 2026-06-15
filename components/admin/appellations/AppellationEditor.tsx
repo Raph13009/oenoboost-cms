@@ -972,6 +972,7 @@ const emptyForm = (): Appellation => ({
   climate_fr: null,
   climate_en: null,
   wine_pct_red: null,
+  wine_pct_rose: null,
   wine_pct_white: null,
   wine_pct_sparkling: null,
   wine_pct_liqueur: null,
@@ -1079,6 +1080,7 @@ export function AppellationEditor({
     setError(null);
     const winePctError = validateWineColorBreakdown({
       wine_pct_red: form.wine_pct_red,
+      wine_pct_rose: form.wine_pct_rose,
       wine_pct_white: form.wine_pct_white,
       wine_pct_sparkling: form.wine_pct_sparkling,
       wine_pct_liqueur: form.wine_pct_liqueur,
@@ -1115,6 +1117,7 @@ export function AppellationEditor({
         climate_fr: normalizeRichTextForStorage(form.climate_fr),
         climate_en: normalizeRichTextForStorage(form.climate_en),
         wine_pct_red: form.wine_pct_red ?? null,
+        wine_pct_rose: form.wine_pct_rose ?? null,
         wine_pct_white: form.wine_pct_white ?? null,
         wine_pct_sparkling: form.wine_pct_sparkling ?? null,
         wine_pct_liqueur: form.wine_pct_liqueur ?? null,
@@ -1354,6 +1357,7 @@ export function AppellationEditor({
           <AopWineColorBreakdownField
             value={{
               wine_pct_red: form.wine_pct_red,
+              wine_pct_rose: form.wine_pct_rose,
               wine_pct_white: form.wine_pct_white,
               wine_pct_sparkling: form.wine_pct_sparkling,
               wine_pct_liqueur: form.wine_pct_liqueur,

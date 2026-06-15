@@ -14,24 +14,27 @@ import {
 const inputClass =
   "h-8 w-16 shrink-0 rounded border border-slate-200 bg-white px-2 text-sm text-slate-900 focus:border-slate-300 focus:outline-none focus:ring-1 focus:ring-slate-200 disabled:bg-slate-50 disabled:text-slate-400";
 
-type ColorKey = "red" | "white" | "sparkling" | "liqueur";
+type ColorKey = "red" | "rose" | "white" | "sparkling" | "liqueur";
 
 const COLOR_KEYS: Array<{
   key: ColorKey;
   field: keyof WineColorBreakdown;
 }> = [
   { key: "red", field: "wine_pct_red" },
+  { key: "rose", field: "wine_pct_rose" },
   { key: "white", field: "wine_pct_white" },
   { key: "sparkling", field: "wine_pct_sparkling" },
   { key: "liqueur", field: "wine_pct_liqueur" },
 ];
 
+const EVEN_SPLIT = 20;
+
 function buildConicGradient(pct: WineColorBreakdown): string | null {
   if (!hasWineColorBreakdownData(pct)) return null;
-  const segments: Array<{ stop: number; color: string }> = [];
   let cursor = 0;
   const items: Array<{ value: number; color: string }> = [
     { value: pct.wine_pct_red ?? 0, color: WINE_COLOR_CHART_COLORS.red },
+    { value: pct.wine_pct_rose ?? 0, color: WINE_COLOR_CHART_COLORS.rose },
     { value: pct.wine_pct_white ?? 0, color: WINE_COLOR_CHART_COLORS.white },
     { value: pct.wine_pct_sparkling ?? 0, color: WINE_COLOR_CHART_COLORS.sparkling },
     { value: pct.wine_pct_liqueur ?? 0, color: WINE_COLOR_CHART_COLORS.liqueur },
@@ -104,10 +107,11 @@ export function AopWineColorBreakdownField({
     if (checked) onChange(emptyWineColorBreakdown());
     else
       onChange({
-        wine_pct_red: 25,
-        wine_pct_white: 25,
-        wine_pct_sparkling: 25,
-        wine_pct_liqueur: 25,
+        wine_pct_red: EVEN_SPLIT,
+        wine_pct_rose: EVEN_SPLIT,
+        wine_pct_white: EVEN_SPLIT,
+        wine_pct_sparkling: EVEN_SPLIT,
+        wine_pct_liqueur: EVEN_SPLIT,
       });
   };
 
@@ -117,10 +121,11 @@ export function AopWineColorBreakdownField({
 
   const distributeEvenly = () => {
     onChange({
-      wine_pct_red: 25,
-      wine_pct_white: 25,
-      wine_pct_sparkling: 25,
-      wine_pct_liqueur: 25,
+      wine_pct_red: EVEN_SPLIT,
+      wine_pct_rose: EVEN_SPLIT,
+      wine_pct_white: EVEN_SPLIT,
+      wine_pct_sparkling: EVEN_SPLIT,
+      wine_pct_liqueur: EVEN_SPLIT,
     });
   };
 
