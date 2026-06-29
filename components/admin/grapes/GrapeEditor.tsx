@@ -228,6 +228,10 @@ export function GrapeEditor({ grape, onClose, onDeleted }: Props) {
 
   const handleSave = async () => {
     setError(null);
+    if (form.type !== "red" && form.type !== "white" && form.type !== "rose") {
+      setError("Le type est obligatoire : choisissez Rouge, Blanc ou Rosé.");
+      return;
+    }
     setSaving(true);
     try {
       const payload = {
@@ -363,11 +367,21 @@ export function GrapeEditor({ grape, onClose, onDeleted }: Props) {
             </div>
             <div>
               <label className={labelClass}>Type</label>
-              <input
-                value={form.type ?? ""}
-                onChange={(e) => update({ type: e.target.value || null })}
-                className={inputClass}
-              />
+              <div className="relative flex h-8 w-full items-center rounded border border-slate-200 bg-white focus-within:border-slate-300 focus-within:ring-1 focus-within:ring-slate-200">
+                <select
+                  value={form.type ?? ""}
+                  onChange={(e) => update({ type: e.target.value || null })}
+                  className="h-full w-full flex-1 appearance-none rounded border-0 bg-transparent pl-2.5 pr-9 text-sm text-slate-900 focus:outline-none focus:ring-0"
+                >
+                  <option value="" disabled>
+                    Sélectionner…
+                  </option>
+                  <option value="red">Rouge</option>
+                  <option value="white">Blanc</option>
+                  <option value="rose">Rosé</option>
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-2.5 h-4 w-4 text-slate-400" aria-hidden />
+              </div>
             </div>
           </div>
         </CollapsibleCard>
