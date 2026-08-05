@@ -122,21 +122,26 @@ function AutoResizeTextarea({
   onChange,
   className,
   minRows = 2,
+  maxRows = 20,
   ...props
 }: {
   value: string;
   onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
   className?: string;
   minRows?: number;
+  maxRows?: number;
 } & Omit<React.TextareaHTMLAttributes<HTMLTextAreaElement>, "value" | "onChange">) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const minHeight = minRows * 20;
+  const maxHeight = maxRows * 20;
   useEffect(() => {
     const ta = ref.current;
     if (!ta) return;
     ta.style.height = "auto";
-    ta.style.height = `${Math.max(ta.scrollHeight, minHeight)}px`;
-  }, [value, minHeight]);
+    const newHeight = Math.max(ta.scrollHeight, minHeight);
+    ta.style.height = `${Math.min(newHeight, maxHeight)}px`;
+    ta.style.overflowY = newHeight > maxHeight ? "auto" : "hidden";
+  }, [value, minHeight, maxHeight]);
   return (
     <textarea
       ref={ref}
