@@ -44,6 +44,7 @@ type Props = {
   onChange: (html: string) => void;
   placeholder?: string;
   minHeightClass?: string;
+  maxHeightClass?: string;
 };
 
 export function CmsRichTextEditor({
@@ -51,6 +52,7 @@ export function CmsRichTextEditor({
   onChange,
   placeholder = "Saisir du texte…",
   minHeightClass = "min-h-[6rem]",
+  maxHeightClass = "max-h-[24rem]",
 }: Props) {
   const editor = useEditor({
     immediatelyRender: false,
@@ -81,8 +83,10 @@ export function CmsRichTextEditor({
     editorProps: {
       attributes: {
         class:
-          `tiptap px-2 py-1.5 text-sm text-slate-900 leading-relaxed outline-none ` +
+          `tiptap px-2 py-1.5 text-sm text-slate-900 leading-relaxed outline-none overflow-y-auto ` +
           minHeightClass +
+          " " +
+          maxHeightClass +
           " " +
           "[&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 " +
           "[&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-6 " +
