@@ -281,7 +281,7 @@ function CollapsibleCard({
       </button>
       <div
         className="overflow-hidden transition-[max-height] duration-200 ease-out"
-        style={{ maxHeight: open ? 5000 : 0 }}
+        style={{ maxHeight: open ? "none" : 0 }}
       >
         <div className={cardPadding}>{children}</div>
       </div>
